@@ -62,6 +62,7 @@ class TonAccessibilityService : AccessibilityService() {
         val isRunning = MutableStateFlow(false)
         val lastSale = MutableStateFlow(SaleData())
         val lastLog = MutableStateFlow("")
+        val seenSaleKeys = mutableSetOf<String>()
     }
 
     private enum class DetailState {
@@ -124,7 +125,10 @@ class TonAccessibilityService : AccessibilityService() {
             }
 
             if (detailState == DetailState.IDLE) {
-                if (!isDetailScreen) return
+                if (!isDetailScreen) {
+                    observeSaleList(allTexts)
+                    return
+                }
                 detailState = DetailState.TOP_CAPTURE_PENDING
                 detailStateStartTime = System.currentTimeMillis()
             }
@@ -193,6 +197,42 @@ class TonAccessibilityService : AccessibilityService() {
         }
         detailState = DetailState.IDLE
         partialSale = SaleData()
+    }
+
+    // ── Sale list observer ────────────────────────────────────
+
+    private fun observeSaleList(allTexts: List<String>) {
+        val amountRegex = Regex("""R\$\s*\d+[.,]\d{2}""")
+
+        val amountPositions = mutableListOf<Int>()
+        for (i in allTexts.indices) {
+            if (amountRegex.containsMatchIn(allTexts[i])) {
+                amountPositions.add(i)
+            }
+        }
+        if (amountPositions.isEmpty()) return
+
+        for (k in amountPositions.indices) {
+            val start = amountPositions[k]
+            val end = if (k + 1 < amountPositions.size) amountPositions[k + 1] else allTexts.size
+            val rowTexts = (start until end)
+                .map { allTexts[it].trim() }
+                .filter { it.length > 1 }
+            if (rowTexts.isEmpty()) continue
+
+            val rowKey = rowTexts.joinToString("||")
+            if (rowKey in seenSaleKeys) continue
+
+            seenSaleKeys.add(rowKey)
+
+            val amount = allTexts[start].trim()
+            val ts = java.text.SimpleDateFormat(
+                "HH:mm:ss", java.util.Locale.getDefault()
+            ).format(java.util.Date())
+            val logMsg = "Nova venda detectada \u2014 $amount \u2014 $ts"
+            Log.i(TAG, logMsg)
+            lastLog.value = logMsg
+        }
     }
 
     // ── Extraction: flat sequential ───────────────────────────
