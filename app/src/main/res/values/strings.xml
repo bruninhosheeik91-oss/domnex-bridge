@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">CFI Bridge</string>
+
+    <!-- AccessibilityService -->
+    <string name="accessibility_service_description">Captura dados visíveis da tela \"Detalhes da venda\" do app TON para exibição no CFI Bridge. Não coleta senhas, logins nem dados além dessa tela.</string>
+
+    <!-- UI – Main Screen -->
+    <string name="bridge_active">Bridge ativo</string>
+    <string name="bridge_inactive">Bridge inativo</string>
+    <string name="open_accessibility_settings">Configurações de Acessibilidade</string>
+    <string name="last_sale_title">Última venda capturada</string>
+    <string name="no_sale_captured">Nenhuma venda capturada ainda</string>
+    <string name="log_label">Log</string>
+</resources>
