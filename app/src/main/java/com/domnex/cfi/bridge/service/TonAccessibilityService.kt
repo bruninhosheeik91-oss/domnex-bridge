@@ -93,6 +93,7 @@ class TonAccessibilityService : AccessibilityService() {
         knownTxCodes.addAll(loadStringSet(prefs, KEY_KNOWN_TX))
         seenFingerprints.addAll(loadStringSet(prefs, KEY_SEEN_FP))
         baselineComplete = false
+        SaleSender.retryPending(this)
         isRunning.value = true
         serviceInfo = serviceInfo.apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
@@ -227,10 +228,12 @@ class TonAccessibilityService : AccessibilityService() {
             knownTxCodes.add(partialSale.codigoTransacao)
             saveStringSet(KEY_KNOWN_TX, knownTxCodes, MAX_KNOWN_TX)
         }
+        val saleToSend = partialSale
         detailState = DetailState.IDLE
         partialSale = SaleData()
         isProcessingSale = false
         if (isComplete) {
+            SaleSender.sendSale(this, saleToSend)
             pendingBack = true
             pendingBackTime = System.currentTimeMillis()
             performGlobalAction(GLOBAL_ACTION_BACK)
