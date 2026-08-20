@@ -160,11 +160,22 @@ class TonAccessibilityService : AccessibilityService() {
     private fun tryRefreshList() {
         val root = rootInActiveWindow ?: return
         try {
-            val scrollable = findScrollableContainer(root)
-            if (scrollable == null) {
+            val candidates = root.findAccessibilityNodeInfosByViewId(
+                "$TON_PACKAGE:id/JadeNavigationBar_SecondaryAction"
+            )
+            if (candidates == null || candidates.isEmpty()) {
                 if (!refreshLoggedNoAccessible) {
-                    Log.i(TAG, "Lista TON sem refresh acess\u00edvel")
-                    lastLog.value = "Lista TON sem refresh acess\u00edvel"
+                    Log.i(TAG, "Bot\u00e3o de atualiza\u00e7\u00e3o TON n\u00e3o encontrado")
+                    lastLog.value = "Bot\u00e3o de atualiza\u00e7\u00e3o TON n\u00e3o encontrado"
+                    refreshLoggedNoAccessible = true
+                }
+                return
+            }
+            val button = candidates[0]
+            if (button.packageName?.toString() != TON_PACKAGE) {
+                if (!refreshLoggedNoAccessible) {
+                    Log.i(TAG, "Bot\u00e3o de atualiza\u00e7\u00e3o TON n\u00e3o encontrado")
+                    lastLog.value = "Bot\u00e3o de atualiza\u00e7\u00e3o TON n\u00e3o encontrado"
                     refreshLoggedNoAccessible = true
                 }
                 return
@@ -172,22 +183,12 @@ class TonAccessibilityService : AccessibilityService() {
             refreshLoggedNoAccessible = false
             Log.i(TAG, "Atualizando lista TON...")
             lastLog.value = "Atualizando lista TON..."
-            scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         } catch (_: Exception) {
         } finally {
             recycleTree(root)
             root.recycle()
         }
-    }
-
-    private fun findScrollableContainer(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        if (node.isScrollable && node.childCount > 0) return node
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            val found = findScrollableContainer(child)
-            if (found != null) return found
-        }
-        return null
     }
 
     private fun isForeground(): Boolean {
