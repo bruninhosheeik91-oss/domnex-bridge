@@ -115,10 +115,14 @@ class TonAccessibilityService : AccessibilityService() {
     }
 
     private fun pollSaleList() {
+        // ── DIAG TEMP ──
+        val fg = isForeground()
+        Log.d(TAG, "[DIAG] ds=$detailState proc=$isProcessingSale back=$pendingBack fg=$fg cycles=$pollNoChangeCycles sinceRefresh=${System.currentTimeMillis() - lastRefreshTime}ms")
+        // ── FIM DIAG ──
         if (detailState != DetailState.IDLE) return
         if (isProcessingSale) return
         if (pendingBack) return
-        if (!isForeground()) return
+        if (!fg) return
 
         val root = rootInActiveWindow ?: return
         var shouldRefresh = false
@@ -128,6 +132,9 @@ class TonAccessibilityService : AccessibilityService() {
             val isDetailScreen = allTexts.any { t ->
                 t.contains("Detalhes da venda", ignoreCase = true)
             }
+            // ── DIAG TEMP ──
+            Log.d(TAG, "[DIAG] isDetail=$isDetailScreen fpSize=${seenFingerprints.size}")
+            // ── FIM DIAG ──
             if (isDetailScreen) return
 
             val fpBefore = seenFingerprints.size
@@ -153,6 +160,7 @@ class TonAccessibilityService : AccessibilityService() {
         }
 
         if (shouldRefresh) {
+            Log.d(TAG, "[DIAG] Polling pronto para refresh")
             tryRefreshList()
         }
     }
@@ -160,10 +168,30 @@ class TonAccessibilityService : AccessibilityService() {
     private fun tryRefreshList() {
         val root = rootInActiveWindow ?: return
         try {
+            var button: AccessibilityNodeInfo? = null
+            var via = ""
+
             val candidates = root.findAccessibilityNodeInfosByViewId(
                 "$TON_PACKAGE:id/JadeNavigationBar_SecondaryAction"
             )
-            if (candidates == null || candidates.isEmpty()) {
+            if (candidates != null && candidates.isNotEmpty()) {
+                val c = candidates[0]
+                if (c.packageName?.toString() == TON_PACKAGE) {
+                    button = c
+                    via = "viewId"
+                }
+            }
+
+            if (button == null) {
+                button = findRefreshByDfs(root)
+                if (button != null) {
+                    via = "dfs"
+                }
+            }
+
+            Log.d(TAG, "[DIAG] btn found=${button != null} via=$via")
+
+            if (button == null) {
                 if (!refreshLoggedNoAccessible) {
                     Log.i(TAG, "Bot\u00e3o de atualiza\u00e7\u00e3o TON n\u00e3o encontrado")
                     lastLog.value = "Bot\u00e3o de atualiza\u00e7\u00e3o TON n\u00e3o encontrado"
@@ -171,24 +199,59 @@ class TonAccessibilityService : AccessibilityService() {
                 }
                 return
             }
-            val button = candidates[0]
-            if (button.packageName?.toString() != TON_PACKAGE) {
+
+            val clickableTarget = findClickableAncestor(button)
+            val isDirectClick = clickableTarget === button
+            Log.d(TAG, "[DIAG] refresh clickable direto=$isDirectClick")
+            Log.d(TAG, "[DIAG] refresh ancestor clickable=${clickableTarget != null}")
+
+            if (clickableTarget == null) {
                 if (!refreshLoggedNoAccessible) {
-                    Log.i(TAG, "Bot\u00e3o de atualiza\u00e7\u00e3o TON n\u00e3o encontrado")
-                    lastLog.value = "Bot\u00e3o de atualiza\u00e7\u00e3o TON n\u00e3o encontrado"
+                    Log.i(TAG, "Bot\u00e3o de atualiza\u00e7\u00e3o TON sem ancestral clic\u00e1vel")
+                    lastLog.value = "Bot\u00e3o de atualiza\u00e7\u00e3o TON sem ancestral clic\u00e1vel"
                     refreshLoggedNoAccessible = true
                 }
                 return
             }
+
             refreshLoggedNoAccessible = false
             Log.i(TAG, "Atualizando lista TON...")
             lastLog.value = "Atualizando lista TON..."
-            button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            val actionResult = clickableTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            Log.d(TAG, "[DIAG] refresh ACTION_CLICK result=$actionResult")
         } catch (_: Exception) {
         } finally {
             recycleTree(root)
             root.recycle()
         }
+    }
+
+    private fun findRefreshByDfs(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val viewId = node.viewIdResourceName
+        if (viewId != null && viewId.contains("JadeNavigationBar_SecondaryAction", ignoreCase = true)
+            && node.packageName?.toString() == TON_PACKAGE
+        ) {
+            return node
+        }
+        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+        if (desc.contains("refresh") && node.packageName?.toString() == TON_PACKAGE) {
+            return node
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findRefreshByDfs(child)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun findClickableAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var current: AccessibilityNodeInfo? = node
+        while (current != null) {
+            if (current.isClickable) return current
+            current = current.parent
+        }
+        return null
     }
 
     private fun isForeground(): Boolean {
