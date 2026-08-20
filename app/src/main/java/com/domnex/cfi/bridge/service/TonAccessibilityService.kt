@@ -90,6 +90,11 @@ class TonAccessibilityService : AccessibilityService() {
 
     private val pollHandler = Handler(Looper.getMainLooper())
     private val POLL_INTERVAL_MS = 2000L
+    private val REFRESH_AFTER_CYCLES = 4
+    private val REFRESH_MIN_INTERVAL_MS = 8000L
+    private var pollNoChangeCycles = 0
+    private var lastRefreshTime = 0L
+    private var refreshLoggedNoAccessible = false
     private val pollRunnable = object : Runnable {
         override fun run() {
             pollSaleList()
@@ -98,6 +103,9 @@ class TonAccessibilityService : AccessibilityService() {
     }
 
     private fun startPolling() {
+        pollNoChangeCycles = 0
+        lastRefreshTime = 0L
+        refreshLoggedNoAccessible = false
         pollHandler.removeCallbacks(pollRunnable)
         pollHandler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
     }
@@ -113,6 +121,7 @@ class TonAccessibilityService : AccessibilityService() {
         if (!isForeground()) return
 
         val root = rootInActiveWindow ?: return
+        var shouldRefresh = false
         try {
             val allTexts = mutableListOf<String>()
             collectTextsOnly(root, allTexts)
@@ -120,12 +129,65 @@ class TonAccessibilityService : AccessibilityService() {
                 t.contains("Detalhes da venda", ignoreCase = true)
             }
             if (isDetailScreen) return
+
+            val fpBefore = seenFingerprints.size
             observeSaleList(allTexts, root)
+
+            if (seenFingerprints.size > fpBefore) {
+                pollNoChangeCycles = 0
+            } else {
+                pollNoChangeCycles++
+                val now = System.currentTimeMillis()
+                if (pollNoChangeCycles >= REFRESH_AFTER_CYCLES &&
+                    now - lastRefreshTime >= REFRESH_MIN_INTERVAL_MS
+                ) {
+                    shouldRefresh = true
+                    lastRefreshTime = now
+                    pollNoChangeCycles = 0
+                }
+            }
         } catch (_: Exception) {
         } finally {
             recycleTree(root)
             root.recycle()
         }
+
+        if (shouldRefresh) {
+            tryRefreshList()
+        }
+    }
+
+    private fun tryRefreshList() {
+        val root = rootInActiveWindow ?: return
+        try {
+            val scrollable = findScrollableContainer(root)
+            if (scrollable == null) {
+                if (!refreshLoggedNoAccessible) {
+                    Log.i(TAG, "Lista TON sem refresh acess\u00edvel")
+                    lastLog.value = "Lista TON sem refresh acess\u00edvel"
+                    refreshLoggedNoAccessible = true
+                }
+                return
+            }
+            refreshLoggedNoAccessible = false
+            Log.i(TAG, "Atualizando lista TON...")
+            lastLog.value = "Atualizando lista TON..."
+            scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+        } catch (_: Exception) {
+        } finally {
+            recycleTree(root)
+            root.recycle()
+        }
+    }
+
+    private fun findScrollableContainer(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        if (node.isScrollable && node.childCount > 0) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findScrollableContainer(child)
+            if (found != null) return found
+        }
+        return null
     }
 
     private fun isForeground(): Boolean {
