@@ -14,9 +14,11 @@ object SaleSender {
     private const val TAG = "CFIBridge"
     private const val PREFS_NAME = "cfi_bridge_prefs"
     private const val KEY_BASE_URL = "api_base_url"
+    private const val KEY_BRIDGE_TOKEN = "bridge_token"
     private const val KEY_PENDING = "pending_sales"
     private const val KEY_SENT = "sent_tx_codes"
     private const val DEFAULT_BASE_URL = ""
+    private const val DEFAULT_BRIDGE_TOKEN = ""
     private const val CONNECT_TIMEOUT = 10_000
     private const val READ_TIMEOUT = 10_000
 
@@ -28,6 +30,16 @@ object SaleSender {
     fun setBaseUrl(context: Context, url: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putString(KEY_BASE_URL, url).apply()
+    }
+
+    fun getBridgeToken(context: Context): String {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_BRIDGE_TOKEN, DEFAULT_BRIDGE_TOKEN) ?: DEFAULT_BRIDGE_TOKEN
+    }
+
+    fun setBridgeToken(context: Context, token: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_BRIDGE_TOKEN, token).apply()
     }
 
     fun sendSale(context: Context, sale: SaleData) {
@@ -45,46 +57,64 @@ object SaleSender {
             return
         }
 
+        if (getBridgeToken(context).isBlank()) {
+            Log.w(TAG, "Bridge token não configurado")
+            TonAccessibilityService.lastLog.value = "Bridge token não configurado"
+            savePending(context, sale)
+            return
+        }
+
         Thread {
             Log.i(TAG, "Enviando venda...")
             TonAccessibilityService.lastLog.value = "Enviando venda..."
             val json = buildPayload(sale)
-            val success = doPost(context, json)
-            if (success) {
-                Log.i(TAG, "Venda enviada com sucesso")
-                TonAccessibilityService.lastLog.value = "Venda enviada com sucesso"
-                val updated = sent.toMutableSet()
-                updated.add(txCode)
-                prefs.edit().putStringSet(KEY_SENT, updated).apply()
-            } else {
-                Log.w(TAG, "Falha no envio")
-                TonAccessibilityService.lastLog.value = "Falha no envio"
-                savePending(context, sale)
+            val code = doPost(context, json)
+            when (code) {
+                200, 201 -> {
+                    Log.i(TAG, "Venda enviada com sucesso ($code)")
+                    TonAccessibilityService.lastLog.value = "Venda enviada com sucesso"
+                    val updated = sent.toMutableSet()
+                    updated.add(txCode)
+                    prefs.edit().putStringSet(KEY_SENT, updated).apply()
+                }
+                202 -> {
+                    Log.i(TAG, "Serial aguardando vínculo")
+                    TonAccessibilityService.lastLog.value = "Serial aguardando vínculo"
+                    savePending(context, sale)
+                }
+                else -> {
+                    Log.w(TAG, "Falha no envio (HTTP $code)")
+                    TonAccessibilityService.lastLog.value = "Falha no envio (HTTP $code)"
+                    savePending(context, sale)
+                }
             }
         }.start()
     }
 
-    private fun doPost(context: Context, json: JSONObject): Boolean {
+    private fun doPost(context: Context, json: JSONObject): Int {
         val conn: HttpURLConnection = try {
             URL(getBaseUrl(context)).openConnection() as HttpURLConnection
         } catch (e: Exception) {
             Log.e(TAG, "Falha no envio", e)
-            return false
+            return -1
         }
         return try {
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
+            val token = getBridgeToken(context)
+            if (token.isNotBlank()) {
+                conn.setRequestProperty("Authorization", "Bearer $token")
+            }
             conn.doOutput = true
             conn.connectTimeout = CONNECT_TIMEOUT
             conn.readTimeout = READ_TIMEOUT
 
             OutputStreamWriter(conn.outputStream).use { it.write(json.toString()) }
 
-            val code = conn.responseCode
-            code in 200..299
+            conn.responseCode
         } catch (e: Exception) {
             Log.e(TAG, "Falha no envio", e)
-            false
+            -1
         } finally {
             conn.disconnect()
         }
@@ -145,19 +175,31 @@ object SaleSender {
             return
         }
 
+        if (getBridgeToken(context).isBlank()) {
+            Log.w(TAG, "Bridge token não configurado — retry adiado")
+            return
+        }
+
         Thread {
             val retryArray = JSONArray()
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
                 val txCode = obj.optString("transactionCode", "")
-                val success = doPost(context, obj)
-                if (success) {
-                    val sent = prefs.getStringSet(KEY_SENT, emptySet())?.toMutableSet()
-                        ?: mutableSetOf()
-                    sent.add(txCode)
-                    prefs.edit().putStringSet(KEY_SENT, sent).apply()
-                } else {
-                    retryArray.put(obj)
+                val code = doPost(context, obj)
+                when (code) {
+                    200, 201 -> {
+                        val sent = prefs.getStringSet(KEY_SENT, emptySet())?.toMutableSet()
+                            ?: mutableSetOf()
+                        sent.add(txCode)
+                        prefs.edit().putStringSet(KEY_SENT, sent).apply()
+                    }
+                    202 -> {
+                        Log.i(TAG, "Serial aguardando vínculo ($txCode)")
+                        retryArray.put(obj)
+                    }
+                    else -> {
+                        retryArray.put(obj)
+                    }
                 }
             }
             prefs.edit().putString(KEY_PENDING, retryArray.toString()).apply()
