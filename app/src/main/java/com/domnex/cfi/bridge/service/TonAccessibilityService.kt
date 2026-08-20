@@ -2,6 +2,7 @@ package com.domnex.cfi.bridge.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.SharedPreferences
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -56,6 +57,12 @@ class TonAccessibilityService : AccessibilityService() {
             "informa\u00e7\u00f5es da venda"
         )
 
+        private const val PREFS_NAME = "cfi_bridge_prefs"
+        private const val KEY_KNOWN_TX = "known_tx_codes"
+        private const val KEY_SEEN_FP = "seen_fingerprints"
+        private const val MAX_SEEN_FP = 500
+        private const val MAX_KNOWN_TX = 500
+
         var instance: TonAccessibilityService? = null
             private set
 
@@ -72,10 +79,20 @@ class TonAccessibilityService : AccessibilityService() {
     private var detailState = DetailState.IDLE
     private var detailStateStartTime = 0L
     private var partialSale = SaleData()
+    private var isProcessingSale = false
+    private var baselineComplete = false
+    private val knownTxCodes = LinkedHashSet<String>()
+    private val seenFingerprints = LinkedHashSet<String>()
+    private var pendingBack = false
+    private var pendingBackTime = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        knownTxCodes.addAll(loadStringSet(prefs, KEY_KNOWN_TX))
+        seenFingerprints.addAll(loadStringSet(prefs, KEY_SEEN_FP))
+        baselineComplete = false
         isRunning.value = true
         serviceInfo = serviceInfo.apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
@@ -125,8 +142,18 @@ class TonAccessibilityService : AccessibilityService() {
             }
 
             if (detailState == DetailState.IDLE) {
+                if (pendingBack) {
+                    if (!isDetailScreen) {
+                        pendingBack = false
+                    } else if (System.currentTimeMillis() - pendingBackTime > 5000L) {
+                        pendingBack = false
+                        Log.w(TAG, "Falha ao retornar para lista")
+                        lastLog.value = "Falha ao retornar para lista"
+                    }
+                    if (pendingBack) return
+                }
                 if (!isDetailScreen) {
-                    observeSaleList(allTexts)
+                    observeSaleList(allTexts, root)
                     return
                 }
                 detailState = DetailState.TOP_CAPTURE_PENDING
@@ -181,27 +208,38 @@ class TonAccessibilityService : AccessibilityService() {
             Log.e(TAG, "Scrape error", e)
             lastLog.value = "Erro na captura: ${e.message}"
         } finally {
+            recycleTree(root)
             root.recycle()
         }
     }
 
     private fun publishAndReset() {
+        val isComplete = partialSale.codigoTransacao.isNotEmpty() &&
+                partialSale.numeroSerie.isNotEmpty()
         if (partialSale.hasData) {
             lastSale.value = partialSale
-            val ts = java.text.SimpleDateFormat(
-                "HH:mm:ss", java.util.Locale.getDefault()
-            ).format(java.util.Date())
             val tx = partialSale.codigoTransacao.ifEmpty { "N/A" }
-            lastLog.value = "Captura OK em $ts \u2014 Tx: $tx"
-            Log.i(TAG, "Sale captured: $tx")
+            val serial = partialSale.numeroSerie.ifEmpty { "N/A" }
+            lastLog.value = "Venda capturada \u2014 Tx: $tx \u2014 Serial: $serial"
+            Log.i(TAG, "Venda capturada \u2014 Tx: $tx \u2014 Serial: $serial")
+        }
+        if (partialSale.codigoTransacao.isNotEmpty()) {
+            knownTxCodes.add(partialSale.codigoTransacao)
+            saveStringSet(KEY_KNOWN_TX, knownTxCodes, MAX_KNOWN_TX)
         }
         detailState = DetailState.IDLE
         partialSale = SaleData()
+        isProcessingSale = false
+        if (isComplete) {
+            pendingBack = true
+            pendingBackTime = System.currentTimeMillis()
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        }
     }
 
     // ── Sale list observer ────────────────────────────────────
 
-    private fun observeSaleList(allTexts: List<String>) {
+    private fun observeSaleList(allTexts: List<String>, root: AccessibilityNodeInfo) {
         val amountRegex = Regex("""R\$\s*\d+[.,]\d{2}""")
 
         val amountPositions = mutableListOf<Int>()
@@ -211,6 +249,23 @@ class TonAccessibilityService : AccessibilityService() {
             }
         }
         if (amountPositions.isEmpty()) return
+
+        if (!baselineComplete) {
+            for (k in amountPositions.indices) {
+                val start = amountPositions[k]
+                val end = if (k + 1 < amountPositions.size) amountPositions[k + 1] else allTexts.size
+                val rowTexts = (start until end)
+                    .map { allTexts[it].trim() }
+                    .filter { it.length > 1 }
+                if (rowTexts.isEmpty()) continue
+                seenFingerprints.add(rowTexts.joinToString("||"))
+            }
+            saveStringSet(KEY_SEEN_FP, seenFingerprints, MAX_SEEN_FP)
+            baselineComplete = true
+            Log.i(TAG, "Baseline conclu\u00eddo \u2014 ${seenFingerprints.size} vendas conhecidas")
+            lastLog.value = "Baseline conclu\u00eddo \u2014 ${seenFingerprints.size} vendas conhecidas"
+            return
+        }
 
         for (k in amountPositions.indices) {
             val start = amountPositions[k]
@@ -222,16 +277,29 @@ class TonAccessibilityService : AccessibilityService() {
 
             val rowKey = rowTexts.joinToString("||")
             if (rowKey in seenSaleKeys) continue
+            if (rowKey in seenFingerprints) {
+                seenSaleKeys.add(rowKey)
+                continue
+            }
 
             seenSaleKeys.add(rowKey)
+            seenFingerprints.add(rowKey)
+            saveStringSet(KEY_SEEN_FP, seenFingerprints, MAX_SEEN_FP)
 
             val amount = allTexts[start].trim()
-            val ts = java.text.SimpleDateFormat(
-                "HH:mm:ss", java.util.Locale.getDefault()
-            ).format(java.util.Date())
-            val logMsg = "Nova venda detectada \u2014 $amount \u2014 $ts"
-            Log.i(TAG, logMsg)
-            lastLog.value = logMsg
+            Log.i(TAG, "Nova venda detectada")
+            lastLog.value = "Nova venda detectada"
+
+            if (!isProcessingSale) {
+                val row = findClickableRowForAmount(root, amount)
+                if (row != null) {
+                    Log.i(TAG, "Abrindo venda...")
+                    lastLog.value = "Abrindo venda..."
+                    row.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    isProcessingSale = true
+                }
+            }
+            return
         }
     }
 
@@ -290,8 +358,58 @@ class TonAccessibilityService : AccessibilityService() {
             val txt = child.text?.toString()
             if (!txt.isNullOrBlank()) out.add(txt.trim())
             collectTextsOnly(child, out)
+        }
+    }
+
+    private fun recycleTree(node: AccessibilityNodeInfo) {
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            recycleTree(child)
             child.recycle()
         }
+    }
+
+    private fun findClickableRowForAmount(root: AccessibilityNodeInfo, amountText: String): AccessibilityNodeInfo? {
+        val textNode = findTextNode(root, amountText) ?: return null
+        var current: AccessibilityNodeInfo? = textNode
+        while (current != null) {
+            if (current.isClickable) return current
+            current = current.parent
+        }
+        return null
+    }
+
+    private fun findTextNode(root: AccessibilityNodeInfo, amountText: String): AccessibilityNodeInfo? {
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.addLast(root)
+        while (stack.isNotEmpty()) {
+            val node = stack.removeLast()
+            val text = node.text?.toString()?.trim() ?: ""
+            if (text.isNotEmpty() && text == amountText) return node
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i) ?: continue
+                stack.addLast(child)
+            }
+        }
+        return null
+    }
+
+    // ── Persistence helpers ──────────────────────────────────
+
+    private fun loadStringSet(prefs: SharedPreferences, key: String): LinkedHashSet<String> {
+        val raw = prefs.getString(key, null)
+        if (raw.isNullOrEmpty()) return LinkedHashSet()
+        return LinkedHashSet(raw.split("\n").filter { it.isNotEmpty() })
+    }
+
+    private fun saveStringSet(key: String, set: LinkedHashSet<String>, maxSize: Int) {
+        while (set.size > maxSize) {
+            set.remove(set.first())
+        }
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(key, set.joinToString("\n"))
+            .apply()
     }
 
     // ── Scroll support ────────────────────────────────────────
@@ -303,7 +421,6 @@ class TonAccessibilityService : AccessibilityService() {
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val scrolled = performScroll(child)
-            child.recycle()
             if (scrolled) return true
         }
         return false
