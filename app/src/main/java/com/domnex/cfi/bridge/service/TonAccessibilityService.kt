@@ -3,6 +3,8 @@ package com.domnex.cfi.bridge.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -86,6 +88,56 @@ class TonAccessibilityService : AccessibilityService() {
     private var pendingBack = false
     private var pendingBackTime = 0L
 
+    private val pollHandler = Handler(Looper.getMainLooper())
+    private val POLL_INTERVAL_MS = 2000L
+    private val pollRunnable = object : Runnable {
+        override fun run() {
+            pollSaleList()
+            pollHandler.postDelayed(this, POLL_INTERVAL_MS)
+        }
+    }
+
+    private fun startPolling() {
+        pollHandler.removeCallbacks(pollRunnable)
+        pollHandler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
+    }
+
+    private fun stopPolling() {
+        pollHandler.removeCallbacks(pollRunnable)
+    }
+
+    private fun pollSaleList() {
+        if (detailState != DetailState.IDLE) return
+        if (isProcessingSale) return
+        if (pendingBack) return
+        if (!isForeground()) return
+
+        val root = rootInActiveWindow ?: return
+        try {
+            val allTexts = mutableListOf<String>()
+            collectTextsOnly(root, allTexts)
+            val isDetailScreen = allTexts.any { t ->
+                t.contains("Detalhes da venda", ignoreCase = true)
+            }
+            if (isDetailScreen) return
+            observeSaleList(allTexts, root)
+        } catch (_: Exception) {
+        } finally {
+            recycleTree(root)
+            root.recycle()
+        }
+    }
+
+    private fun isForeground(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        try {
+            val pkg = root.packageName?.toString()
+            return pkg == TON_PACKAGE
+        } finally {
+            root.recycle()
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
@@ -104,6 +156,7 @@ class TonAccessibilityService : AccessibilityService() {
             notificationTimeout = 200
         }
         Log.i(TAG, "AccessibilityService connected")
+        startPolling()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -120,10 +173,12 @@ class TonAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
+        stopPolling()
         Log.i(TAG, "AccessibilityService interrupted")
     }
 
     override fun onDestroy() {
+        stopPolling()
         instance = null
         isRunning.value = false
         super.onDestroy()
