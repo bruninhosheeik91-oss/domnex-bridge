@@ -3,8 +3,6 @@ package com.domnex.cfi.bridge.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.SharedPreferences
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -88,41 +86,17 @@ class TonAccessibilityService : AccessibilityService() {
     private var pendingBack = false
     private var pendingBackTime = 0L
 
-    private val pollHandler = Handler(Looper.getMainLooper())
-    private val POLL_INTERVAL_MS = 2000L
     private val REFRESH_AFTER_CYCLES = 4
     private val REFRESH_MIN_INTERVAL_MS = 8000L
     private var pollNoChangeCycles = 0
     private var lastRefreshTime = 0L
     private var refreshLoggedNoAccessible = false
-    private val pollRunnable = object : Runnable {
-        override fun run() {
-            pollSaleList()
-            pollHandler.postDelayed(this, POLL_INTERVAL_MS)
-        }
-    }
 
-    private fun startPolling() {
-        pollNoChangeCycles = 0
-        lastRefreshTime = 0L
-        refreshLoggedNoAccessible = false
-        pollHandler.removeCallbacks(pollRunnable)
-        pollHandler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
-    }
-
-    private fun stopPolling() {
-        pollHandler.removeCallbacks(pollRunnable)
-    }
-
-    private fun pollSaleList() {
-        // ── DIAG TEMP ──
-        val fg = isForeground()
-        Log.d(TAG, "[DIAG] ds=$detailState proc=$isProcessingSale back=$pendingBack fg=$fg cycles=$pollNoChangeCycles sinceRefresh=${System.currentTimeMillis() - lastRefreshTime}ms")
-        // ── FIM DIAG ──
+    fun runPollCycle() {
         if (detailState != DetailState.IDLE) return
         if (isProcessingSale) return
         if (pendingBack) return
-        if (!fg) return
+        if (!isForeground()) return
 
         val root = rootInActiveWindow ?: return
         var shouldRefresh = false
@@ -132,9 +106,6 @@ class TonAccessibilityService : AccessibilityService() {
             val isDetailScreen = allTexts.any { t ->
                 t.contains("Detalhes da venda", ignoreCase = true)
             }
-            // ── DIAG TEMP ──
-            Log.d(TAG, "[DIAG] isDetail=$isDetailScreen fpSize=${seenFingerprints.size}")
-            // ── FIM DIAG ──
             if (isDetailScreen) return
 
             val fpBefore = seenFingerprints.size
@@ -160,7 +131,6 @@ class TonAccessibilityService : AccessibilityService() {
         }
 
         if (shouldRefresh) {
-            Log.d(TAG, "[DIAG] Polling pronto para refresh")
             tryRefreshList()
         }
     }
@@ -169,7 +139,6 @@ class TonAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return
         try {
             var button: AccessibilityNodeInfo? = null
-            var via = ""
 
             val candidates = root.findAccessibilityNodeInfosByViewId(
                 "$TON_PACKAGE:id/JadeNavigationBar_SecondaryAction"
@@ -178,18 +147,12 @@ class TonAccessibilityService : AccessibilityService() {
                 val c = candidates[0]
                 if (c.packageName?.toString() == TON_PACKAGE) {
                     button = c
-                    via = "viewId"
                 }
             }
 
             if (button == null) {
                 button = findRefreshByDfs(root)
-                if (button != null) {
-                    via = "dfs"
-                }
             }
-
-            Log.d(TAG, "[DIAG] btn found=${button != null} via=$via")
 
             if (button == null) {
                 if (!refreshLoggedNoAccessible) {
@@ -201,9 +164,6 @@ class TonAccessibilityService : AccessibilityService() {
             }
 
             val clickableTarget = findClickableAncestor(button)
-            val isDirectClick = clickableTarget === button
-            Log.d(TAG, "[DIAG] refresh clickable direto=$isDirectClick")
-            Log.d(TAG, "[DIAG] refresh ancestor clickable=${clickableTarget != null}")
 
             if (clickableTarget == null) {
                 if (!refreshLoggedNoAccessible) {
@@ -217,8 +177,7 @@ class TonAccessibilityService : AccessibilityService() {
             refreshLoggedNoAccessible = false
             Log.i(TAG, "Atualizando lista TON...")
             lastLog.value = "Atualizando lista TON..."
-            val actionResult = clickableTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            Log.d(TAG, "[DIAG] refresh ACTION_CLICK result=$actionResult")
+            clickableTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         } catch (_: Exception) {
         } finally {
             recycleTree(root)
@@ -282,7 +241,6 @@ class TonAccessibilityService : AccessibilityService() {
             notificationTimeout = 200
         }
         Log.i(TAG, "AccessibilityService connected")
-        startPolling()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -299,12 +257,10 @@ class TonAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
-        stopPolling()
         Log.i(TAG, "AccessibilityService interrupted")
     }
 
     override fun onDestroy() {
-        stopPolling()
         instance = null
         isRunning.value = false
         super.onDestroy()
