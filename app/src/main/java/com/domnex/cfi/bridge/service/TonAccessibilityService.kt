@@ -80,12 +80,14 @@ class TonAccessibilityService : AccessibilityService() {
     private var detailStateStartTime = 0L
     private var partialSale = SaleData()
     private var isProcessingSale = false
+    private var processingStartTime = 0L
     private var baselineComplete = false
     private val knownTxCodes = LinkedHashSet<String>()
     private val seenFingerprints = LinkedHashSet<String>()
     private var pendingBack = false
     private var pendingBackTime = 0L
 
+    private val SALE_TIMEOUT_MS = 15000L
     private val REFRESH_AFTER_CYCLES = 4
     private val REFRESH_MIN_INTERVAL_MS = 8000L
     private var pollNoChangeCycles = 0
@@ -93,6 +95,26 @@ class TonAccessibilityService : AccessibilityService() {
     private var refreshLoggedNoAccessible = false
 
     fun runPollCycle() {
+        // ── DIAG TEMP ──
+        val diagRoot = rootInActiveWindow
+        Log.d(
+            TAG,
+            "[POLL] cycle started state=$detailState proc=$isProcessingSale " +
+                    "back=$pendingBack root=${diagRoot != null} pkg=${diagRoot?.packageName ?: "null"}"
+        )
+        diagRoot?.recycle()
+        // ── FIM DIAG ──
+        if (isProcessingSale &&
+            System.currentTimeMillis() - processingStartTime >= SALE_TIMEOUT_MS
+        ) {
+            Log.w(TAG, "Timeout processando venda - resetando maquina de estados")
+            lastLog.value = "Timeout na captura - retomando monitoramento"
+            isProcessingSale = false
+            detailState = DetailState.IDLE
+            partialSale = SaleData()
+            processingStartTime = 0L
+            return
+        }
         if (detailState != DetailState.IDLE) return
         if (isProcessingSale) return
         if (pendingBack) return
@@ -131,6 +153,9 @@ class TonAccessibilityService : AccessibilityService() {
         }
 
         if (shouldRefresh) {
+            // ── DIAG TEMP ──
+            Log.d(TAG, "[POLL] refresh ready")
+            // ── FIM DIAG ──
             tryRefreshList()
         }
     }
@@ -139,6 +164,9 @@ class TonAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return
         try {
             var button: AccessibilityNodeInfo? = null
+            // ── DIAG TEMP ──
+            var via = "nenhum"
+            // ── FIM DIAG ──
 
             val candidates = root.findAccessibilityNodeInfosByViewId(
                 "$TON_PACKAGE:id/JadeNavigationBar_SecondaryAction"
@@ -147,12 +175,20 @@ class TonAccessibilityService : AccessibilityService() {
                 val c = candidates[0]
                 if (c.packageName?.toString() == TON_PACKAGE) {
                     button = c
+                    via = "viewId"
                 }
             }
 
             if (button == null) {
                 button = findRefreshByDfs(root)
+                if (button != null) {
+                    via = "dfs"
+                }
             }
+
+            // ── DIAG TEMP ──
+            Log.d(TAG, "[POLL] refresh botao=${button != null} metodo=$via")
+            // ── FIM DIAG ──
 
             if (button == null) {
                 if (!refreshLoggedNoAccessible) {
@@ -177,7 +213,10 @@ class TonAccessibilityService : AccessibilityService() {
             refreshLoggedNoAccessible = false
             Log.i(TAG, "Atualizando lista TON...")
             lastLog.value = "Atualizando lista TON..."
-            clickableTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            // ── DIAG TEMP ──
+            val actionResult = clickableTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            Log.d(TAG, "[POLL] refresh ACTION_CLICK=$actionResult")
+            // ── FIM DIAG ──
         } catch (_: Exception) {
         } finally {
             recycleTree(root)
@@ -422,10 +461,6 @@ class TonAccessibilityService : AccessibilityService() {
                 continue
             }
 
-            seenSaleKeys.add(rowKey)
-            seenFingerprints.add(rowKey)
-            saveStringSet(KEY_SEEN_FP, seenFingerprints, MAX_SEEN_FP)
-
             val amount = allTexts[start].trim()
             Log.i(TAG, "Nova venda detectada")
             lastLog.value = "Nova venda detectada"
@@ -435,8 +470,17 @@ class TonAccessibilityService : AccessibilityService() {
                 if (row != null) {
                     Log.i(TAG, "Abrindo venda...")
                     lastLog.value = "Abrindo venda..."
-                    row.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    isProcessingSale = true
+                    val clicked = row.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    if (clicked) {
+                        seenSaleKeys.add(rowKey)
+                        seenFingerprints.add(rowKey)
+                        saveStringSet(KEY_SEEN_FP, seenFingerprints, MAX_SEEN_FP)
+                        isProcessingSale = true
+                        processingStartTime = System.currentTimeMillis()
+                    } else {
+                        Log.w(TAG, "Falha ao abrir venda - nova tentativa no proximo ciclo")
+                        lastLog.value = "Falha ao abrir venda - nova tentativa"
+                    }
                 }
             }
             return

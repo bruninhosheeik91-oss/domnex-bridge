@@ -11,11 +11,13 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import com.domnex.cfi.bridge.R
 
 class BridgeForegroundService : Service() {
 
     companion object {
+        private const val TAG = "CFIBridge"
         private const val CHANNEL_ID = "cfi_bridge_monitor"
         private const val NOTIFICATION_ID = 1
         private const val POLL_INTERVAL_MS = 2000L
@@ -30,7 +32,20 @@ class BridgeForegroundService : Service() {
     private val tickerHandler = Handler(Looper.getMainLooper())
     private val tickRunnable = object : Runnable {
         override fun run() {
-            TonAccessibilityService.instance?.runPollCycle()
+            // ── DIAG TEMP ──
+            Log.d(TAG, "[FGS] tick instance=${TonAccessibilityService.instance != null}")
+            // ── FIM DIAG ──
+            val accessibilityService = TonAccessibilityService.instance
+            if (accessibilityService != null) {
+                accessibilityService.runPollCycle()
+                // ── DIAG TEMP ──
+                Log.d(TAG, "[FGS] tick runPollCycle chamado")
+                // ── FIM DIAG ──
+            } else {
+                // ── DIAG TEMP ──
+                Log.d(TAG, "[FGS] tick instance=null ciclo nao executado")
+                // ── FIM DIAG ──
+            }
             tickerHandler.postDelayed(this, POLL_INTERVAL_MS)
         }
     }
