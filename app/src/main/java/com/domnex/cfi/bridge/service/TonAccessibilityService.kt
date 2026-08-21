@@ -131,7 +131,7 @@ class TonAccessibilityService : AccessibilityService() {
             if (isDetailScreen) return
 
             val fpBefore = seenFingerprints.size
-            observeSaleList(allTexts, root)
+            observeSaleList(root)
 
             if (seenFingerprints.size > fpBefore) {
                 pollNoChangeCycles = 0
@@ -330,7 +330,7 @@ class TonAccessibilityService : AccessibilityService() {
                     if (pendingBack) return
                 }
                 if (!isDetailScreen) {
-                    observeSaleList(allTexts, root)
+                    observeSaleList(root)
                     return
                 }
                 detailState = DetailState.TOP_CAPTURE_PENDING
@@ -418,72 +418,46 @@ class TonAccessibilityService : AccessibilityService() {
 
     // ── Sale list observer ────────────────────────────────────
 
-    private fun observeSaleList(allTexts: List<String>, root: AccessibilityNodeInfo) {
-        val amountRegex = Regex("""R\$\s*\d+[.,]\d{2}""")
-
-        val amountPositions = mutableListOf<Int>()
-        for (i in allTexts.indices) {
-            if (amountRegex.containsMatchIn(allTexts[i])) {
-                amountPositions.add(i)
-            }
-        }
-        if (amountPositions.isEmpty()) return
-
-        if (!baselineComplete) {
-            for (k in amountPositions.indices) {
-                val start = amountPositions[k]
-                val end = if (k + 1 < amountPositions.size) amountPositions[k + 1] else allTexts.size
-                val rowTexts = (start until end)
-                    .map { allTexts[it].trim() }
-                    .filter { it.length > 1 }
-                if (rowTexts.isEmpty()) continue
-                seenFingerprints.add(rowTexts.joinToString("||"))
-            }
-            saveStringSet(KEY_SEEN_FP, seenFingerprints, MAX_SEEN_FP)
-            baselineComplete = true
-            Log.i(TAG, "Baseline conclu\u00eddo \u2014 ${seenFingerprints.size} vendas conhecidas")
-            lastLog.value = "Baseline conclu\u00eddo \u2014 ${seenFingerprints.size} vendas conhecidas"
-            return
-        }
-
-        for (k in amountPositions.indices) {
-            val start = amountPositions[k]
-            val end = if (k + 1 < amountPositions.size) amountPositions[k + 1] else allTexts.size
-            val rowTexts = (start until end)
-                .map { allTexts[it].trim() }
-                .filter { it.length > 1 }
-            if (rowTexts.isEmpty()) continue
-
-            val rowKey = rowTexts.joinToString("||")
-            if (rowKey in seenSaleKeys) continue
-            if (rowKey in seenFingerprints) {
-                seenSaleKeys.add(rowKey)
-                continue
+    private fun observeSaleList(root: AccessibilityNodeInfo) {
+        val detected = SaleRowDetector.detectSaleRows(AccRowNode(root))
+        try {
+            if (!baselineComplete) {
+                for (row in detected) {
+                    seenFingerprints.add(row.fields.fingerprint())
+                }
+                saveStringSet(KEY_SEEN_FP, seenFingerprints, MAX_SEEN_FP)
+                baselineComplete = true
+                Log.i(TAG, "Baseline conclu\u00eddo \u2014 ${seenFingerprints.size} vendas conhecidas")
+                lastLog.value = "Baseline conclu\u00eddo \u2014 ${seenFingerprints.size} vendas conhecidas"
+                return
             }
 
-            val amount = allTexts[start].trim()
-            Log.i(TAG, "Nova venda detectada")
-            lastLog.value = "Nova venda detectada"
+            for (row in detected) {
+                val rowKey = row.fields.fingerprint()
+                if (rowKey in seenSaleKeys) continue
+                if (rowKey in seenFingerprints) {
+                    seenSaleKeys.add(rowKey)
+                    continue
+                }
 
-            if (!isProcessingSale) {
-                val row = findClickableRowForAmount(root, amount)
-                if (row != null) {
+                Log.i(TAG, "Nova venda detectada")
+                lastLog.value = "Nova venda detectada"
+
+                if (!isProcessingSale && SaleRowDetector.clickRow(row, TON_PACKAGE)) {
                     Log.i(TAG, "Abrindo venda...")
                     lastLog.value = "Abrindo venda..."
-                    val clicked = row.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    if (clicked) {
-                        seenSaleKeys.add(rowKey)
-                        seenFingerprints.add(rowKey)
-                        saveStringSet(KEY_SEEN_FP, seenFingerprints, MAX_SEEN_FP)
-                        isProcessingSale = true
-                        processingStartTime = System.currentTimeMillis()
-                    } else {
-                        Log.w(TAG, "Falha ao abrir venda - nova tentativa no proximo ciclo")
-                        lastLog.value = "Falha ao abrir venda - nova tentativa"
-                    }
+                    seenSaleKeys.add(rowKey)
+                    seenFingerprints.add(rowKey)
+                    saveStringSet(KEY_SEEN_FP, seenFingerprints, MAX_SEEN_FP)
+                    isProcessingSale = true
+                    processingStartTime = System.currentTimeMillis()
                 }
+                return
             }
-            return
+        } finally {
+            for (row in detected) {
+                (row.node as AccRowNode).recycle()
+            }
         }
     }
 
@@ -553,31 +527,6 @@ class TonAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun findClickableRowForAmount(root: AccessibilityNodeInfo, amountText: String): AccessibilityNodeInfo? {
-        val textNode = findTextNode(root, amountText) ?: return null
-        var current: AccessibilityNodeInfo? = textNode
-        while (current != null) {
-            if (current.isClickable) return current
-            current = current.parent
-        }
-        return null
-    }
-
-    private fun findTextNode(root: AccessibilityNodeInfo, amountText: String): AccessibilityNodeInfo? {
-        val stack = ArrayDeque<AccessibilityNodeInfo>()
-        stack.addLast(root)
-        while (stack.isNotEmpty()) {
-            val node = stack.removeLast()
-            val text = node.text?.toString()?.trim() ?: ""
-            if (text.isNotEmpty() && text == amountText) return node
-            for (i in 0 until node.childCount) {
-                val child = node.getChild(i) ?: continue
-                stack.addLast(child)
-            }
-        }
-        return null
-    }
-
     // ── Persistence helpers ──────────────────────────────────
 
     private fun loadStringSet(prefs: SharedPreferences, key: String): LinkedHashSet<String> {
@@ -624,5 +573,33 @@ class TonAccessibilityService : AccessibilityService() {
             codigoTransacao = primary.codigoTransacao.ifEmpty { secondary.codigoTransacao },
             codigoAutorizacao = primary.codigoAutorizacao.ifEmpty { secondary.codigoAutorizacao }
         )
+    }
+}
+
+private class AccRowNode(private val node: AccessibilityNodeInfo) : RowNode {
+    override val text: String?
+        get() = node.text?.toString()
+    override val packageName: String?
+        get() = node.packageName?.toString()
+    override val isClickable: Boolean
+        get() = node.isClickable
+    override val isScrollable: Boolean
+        get() = node.isScrollable
+    override val childCount: Int
+        get() = node.childCount
+    override val parent: RowNode?
+        get() = node.parent?.let(::AccRowNode)
+
+    override fun childAt(index: Int): RowNode? =
+        node.getChild(index)?.let(::AccRowNode)
+
+    override fun performClick(): Boolean =
+        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+
+    fun recycle() {
+        try {
+            node.recycle()
+        } catch (_: Exception) {
+        }
     }
 }
