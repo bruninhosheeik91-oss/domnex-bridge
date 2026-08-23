@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
@@ -55,7 +56,9 @@ fun SaleFieldTile(
                     MaterialTheme.typography.titleSmall
                 },
                 color = valueColor,
-                maxLines = 2
+                softWrap = true,
+                maxLines = Int.MAX_VALUE,
+                overflow = TextOverflow.Visible
             )
         }
     }

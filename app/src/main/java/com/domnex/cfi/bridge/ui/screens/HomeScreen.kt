@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -34,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.domnex.cfi.bridge.service.TonAccessibilityService
 import com.domnex.cfi.bridge.ui.components.BridgeCard
-import com.domnex.cfi.bridge.ui.components.BridgeSectionTitle
+import com.domnex.cfi.bridge.ui.components.BridgeStatusDot
 import com.domnex.cfi.bridge.ui.components.LastSaleCard
 import com.domnex.cfi.bridge.ui.components.MonitoringCard
 import com.domnex.cfi.bridge.ui.components.OperationalHealthIndicator
@@ -46,7 +47,9 @@ import com.domnex.cfi.bridge.ui.theme.SuccessGreen
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
 
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    onOpenConfig: () -> Unit = {}
+) {
     val isRunning by TonAccessibilityService.isRunning.collectAsState()
     val lastSale by TonAccessibilityService.lastSale.collectAsState()
     val lastLog by TonAccessibilityService.lastLog.collectAsState()
@@ -85,14 +88,12 @@ fun HomeScreen() {
 
             if (lastLog.isNotBlank()) {
                 Spacer(Modifier.height(16.dp))
-                MotorLogCard(log = lastLog)
+                MotorEventCard(log = lastLog)
             }
 
-            Spacer(Modifier.height(28.dp))
-            BridgeSectionTitle(title = "Configuração")
-            Spacer(Modifier.height(12.dp))
-            CfiConfigSection()
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(24.dp))
+            ConfigShortcut(onOpenConfig = onOpenConfig)
+            Spacer(Modifier.height(32.dp))
         }
     }
 }
@@ -120,22 +121,57 @@ private fun HomeHeader() {
 }
 
 @Composable
-private fun MotorLogCard(log: String) {
+private fun MotorEventCard(log: String) {
     BridgeCard(contentPadding = PaddingValues(14.dp)) {
         Text(
-            text = "ÚLTIMO EVENTO DO MOTOR",
+            text = "ATIVIDADE DO BRIDGE",
             style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.4.sp),
             color = TextSecondary,
             fontWeight = FontWeight.Bold
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = log,
+            text = sanitizeMotorEvent(log),
             style = MonoSmall.copy(fontFamily = FontFamily.Monospace),
             color = TextSecondary.copy(alpha = 0.85f),
             maxLines = 6,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+private fun sanitizeMotorEvent(raw: String): String {
+    var out = raw.replace(Regex("\\s*[—–\\-]?\\s*Tx:\\s*N/?A", RegexOption.IGNORE_CASE), "")
+    out = out.replace(Regex("\\s*[—–\\-]?\\s*Serial:\\s*N/?A", RegexOption.IGNORE_CASE), "")
+    out = out.replace(Regex("[—–\\-]\\s*$"), "").trim()
+    return out.ifEmpty { "Última atividade do Bridge registrada" }
+}
+
+@Composable
+private fun ConfigShortcut(
+    onOpenConfig: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        onClick = onOpenConfig,
+        shape = CircleShape,
+        color = Color.White.copy(alpha = 0.05f),
+        contentColor = TextSecondary,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BridgeStatusDot(color = Gold, size = 6.dp, glowRadius = 3.dp)
+            Spacer(Modifier.size(8.dp))
+            Text(
+                text = "Configuração",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }
 

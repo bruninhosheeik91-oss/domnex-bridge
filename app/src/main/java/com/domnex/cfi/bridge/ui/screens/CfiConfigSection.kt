@@ -58,7 +58,7 @@ fun CfiConfigSection() {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Configuração CFI",
+                    text = "Configuração da integração",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -69,7 +69,7 @@ fun CfiConfigSection() {
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
-                            text = "CFI configurado",
+                            text = "Integração configurada",
                             modifier = Modifier.padding(
                                 horizontal = 12.dp,
                                 vertical = 4.dp
