@@ -89,7 +89,7 @@ class TonAccessibilityService : AccessibilityService() {
 
     private val SALE_TIMEOUT_MS = 15000L
     private val REFRESH_AFTER_CYCLES = 4
-    private val REFRESH_MIN_INTERVAL_MS = 8000L
+    private val REFRESH_MIN_INTERVAL_MS = 20000L
     private var pollNoChangeCycles = 0
     private var lastRefreshTime = 0L
     private var refreshLoggedNoAccessible = false

@@ -1,58 +1,53 @@
 package com.domnex.cfi.bridge.ui.theme
 
-import android.app.Activity
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+private val DomnexBridgeColorScheme = darkColorScheme(
+    primary = Gold,
+    onPrimary = BridgeBlack,
+    primaryContainer = GoldHighlight,
+    onPrimaryContainer = BridgeBlack,
+    secondary = SuccessGreen,
+    onSecondary = BridgeBlack,
+    secondaryContainer = NavySurface,
+    onSecondaryContainer = SuccessGreen,
+    tertiary = WarningAmber,
+    onTertiary = BridgeBlack,
+    tertiaryContainer = NavySurfaceHigh,
+    onTertiaryContainer = WarningAmber,
+    error = FailureRose,
+    onError = Color.White,
+    errorContainer = NavySurfaceHigh,
+    onErrorContainer = FailureRose,
+    background = BridgeBlack,
+    onBackground = TextPrimary,
+    surface = BridgeBlack,
+    onSurface = TextPrimary,
+    surfaceVariant = NavyCard,
+    onSurfaceVariant = TextSecondary,
+    inverseSurface = NavyCard,
+    inverseOnSurface = TextPrimary,
+    outline = Color.White.copy(alpha = 0.15f),
+    outlineVariant = Color.White.copy(alpha = 0.05f),
+    scrim = Color.Black,
+    surfaceBright = NavySurfaceAlt,
+    surfaceDim = BridgeBlack,
+    surfaceContainerLowest = BridgeBlack,
+    surfaceContainerLow = NavySecondary,
+    surfaceContainer = NavySurface,
+    surfaceContainerHigh = NavyCard,
+    surfaceContainerHighest = NavySurfaceAlt
 )
 
 @Composable
-fun CFIBridgeTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
-) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
+fun CFIBridgeTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
+        colorScheme = DomnexBridgeColorScheme,
+        typography = AppTypography,
+        shapes = BridgeShapes,
         content = content
     )
 }
