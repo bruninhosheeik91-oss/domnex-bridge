@@ -21,9 +21,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,8 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.domnex.cfi.bridge.auth.AuthProvider
 import com.domnex.cfi.bridge.auth.CreateUserOutcome
-import com.domnex.cfi.bridge.auth.LocalUserDirectory
 import com.domnex.cfi.bridge.auth.UserRole
 import com.domnex.cfi.bridge.auth.UserStatus
 import com.domnex.cfi.bridge.ui.components.BridgeCard
@@ -45,6 +47,9 @@ import com.domnex.cfi.bridge.ui.theme.FailureRose
 import com.domnex.cfi.bridge.ui.theme.Gold
 import com.domnex.cfi.bridge.ui.theme.TextMuted
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CreateAccessScreen(
@@ -60,8 +65,17 @@ fun CreateAccessScreen(
     var statusPending by rememberSaveable { mutableStateOf(false) }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var showAdminConfirm by rememberSaveable { mutableStateOf(false) }
+    var creating by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-    val clientNames = remember { LocalUserDirectory.findClientNames() }
+    val remoteBackend = AuthProvider.usingLocalDevBackend.not()
+    var clientNames by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        clientNames = withContext(Dispatchers.IO) {
+            runCatching { AuthProvider.userDirectory.findClientNames() }.getOrDefault(emptyList())
+        }
+    }
 
     fun effectiveClientName(): String? {
         if (roleIsAdmin) return null
@@ -70,6 +84,7 @@ fun CreateAccessScreen(
     }
 
     fun submit(confirmedAdmin: Boolean) {
+        if (creating) return
         errorMessage = null
         if (name.trim().length < 2) {
             errorMessage = "Informe o nome do usuário."
@@ -89,16 +104,27 @@ fun CreateAccessScreen(
             return
         }
         val initialStatus = if (statusPending) UserStatus.PENDING else UserStatus.ACTIVE
-        when (val outcome = LocalUserDirectory.createAccess(
-            name = name,
-            email = normalizedEmail,
-            role = if (roleIsAdmin) UserRole.DOMNEX_ADMIN else UserRole.CLIENT,
-            clientName = effectiveClientName(),
-            status = initialStatus
-        )) {
-            is CreateUserOutcome.Created -> onCreated()
-            CreateUserOutcome.EmailInUse -> {
-                errorMessage = "Já existe um acesso com este e-mail."
+        creating = true
+        scope.launch {
+            // Criação real envolve backend privilegiado -> roda em IO.
+            val outcome = withContext(Dispatchers.IO) {
+                AuthProvider.userDirectory.createAccess(
+                    name = name,
+                    email = normalizedEmail,
+                    role = if (roleIsAdmin) UserRole.DOMNEX_ADMIN else UserRole.CLIENT,
+                    clientName = effectiveClientName(),
+                    status = initialStatus
+                )
+            }
+            creating = false
+            when (outcome) {
+                is CreateUserOutcome.Created -> onCreated()
+                CreateUserOutcome.EmailInUse -> {
+                    errorMessage = "Já existe um acesso com este e-mail."
+                }
+                is CreateUserOutcome.Failed -> {
+                    errorMessage = outcome.message
+                }
             }
         }
     }
@@ -208,6 +234,14 @@ fun CreateAccessScreen(
                         placeholder = "Ou informe outro cliente",
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (remoteBackend) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Se o cliente ainda não existir, ele será criado no Supabase com este nome.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted
+                        )
+                    }
                 }
             }
         }
@@ -231,7 +265,11 @@ fun CreateAccessScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "O acesso é criado sem senha. O usuário recebe um convite para definir a própria senha — fluxo simulado nesta versão.",
+                    text = if (remoteBackend) {
+                        "O acesso é criado no Supabase Auth sem senha. O usuário recebe um convite por e-mail para definir a própria senha."
+                    } else {
+                        "O acesso é criado sem senha. O usuário recebe um convite para definir a própria senha — fluxo simulado nesta versão DEV."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted
                 )
@@ -250,9 +288,10 @@ fun CreateAccessScreen(
 
         Spacer(Modifier.height(20.dp))
         GoldPrimaryButton(
-            text = "CRIAR ACESSO",
+            text = if (creating) "CRIANDO..." else "CRIAR ACESSO",
             onClick = { submit(confirmedAdmin = false) },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !creating
         )
         Spacer(Modifier.height(30.dp))
     }

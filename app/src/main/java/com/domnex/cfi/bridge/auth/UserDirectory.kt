@@ -10,6 +10,7 @@ enum class AccessFilter {
 sealed interface CreateUserOutcome {
     data class Created(val user: UserAccount) : CreateUserOutcome
     data object EmailInUse : CreateUserOutcome
+    data class Failed(val message: String) : CreateUserOutcome
 }
 
 interface UserDirectory {

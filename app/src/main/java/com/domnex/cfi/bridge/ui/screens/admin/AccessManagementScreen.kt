@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -32,16 +33,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.domnex.cfi.bridge.auth.AccessFilter
-import com.domnex.cfi.bridge.auth.LocalUserDirectory
+import com.domnex.cfi.bridge.auth.AuthProvider
+import com.domnex.cfi.bridge.auth.UserAccount
 import com.domnex.cfi.bridge.ui.components.BridgeTextField
 import com.domnex.cfi.bridge.ui.components.DevDataBadge
 import com.domnex.cfi.bridge.ui.components.FilterPill
 import com.domnex.cfi.bridge.ui.components.GoldPrimaryButton
 import com.domnex.cfi.bridge.ui.components.SectionCaption
+import com.domnex.cfi.bridge.ui.components.StatusBadge
+import com.domnex.cfi.bridge.ui.components.BadgeTone
 import com.domnex.cfi.bridge.ui.components.UserListItem
+import com.domnex.cfi.bridge.ui.theme.FailureRose
 import com.domnex.cfi.bridge.ui.theme.Gold
 import com.domnex.cfi.bridge.ui.theme.TextMuted
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AccessManagementScreen(
@@ -61,8 +68,22 @@ fun AccessManagementScreen(
     )
     val activeFilter = filters[filterIndex].second
 
-    val users = remember(dataVersion, query, activeFilter) {
-        LocalUserDirectory.listUsers(query = query, filter = activeFilter)
+    var users by remember { mutableStateOf<List<UserAccount>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(dataVersion, query, activeFilter) {
+        loading = true
+        loadError = null
+        users = withContext(Dispatchers.IO) {
+            runCatching {
+                AuthProvider.userDirectory.listUsers(query = query, filter = activeFilter)
+            }.onFailure { error ->
+                users = emptyList()
+                loadError = error.message ?: "Falha ao carregar acessos."
+            }.getOrDefault(emptyList())
+        }
+        loading = false
     }
 
     Column(
@@ -96,7 +117,11 @@ fun AccessManagementScreen(
         }
 
         Spacer(Modifier.height(14.dp))
-        DevDataBadge()
+        if (AuthProvider.usingLocalDevBackend) {
+            DevDataBadge()
+        } else {
+            StatusBadge(text = "BACKEND SUPABASE", tone = BadgeTone.Info)
+        }
 
         Spacer(Modifier.height(16.dp))
         BridgeTextField(
@@ -125,10 +150,38 @@ fun AccessManagementScreen(
         )
 
         Spacer(Modifier.height(18.dp))
-        SectionCaption("USUÁRIOS (${users.size})")
+        SectionCaption(if (loading) "USUÁRIOS" else "USUÁRIOS (${users.size})")
         Spacer(Modifier.height(10.dp))
 
-        if (users.isEmpty()) {
+        if (loading) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    text = "Carregando acessos...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextMuted
+                )
+            }
+        } else if (loadError != null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    text = loadError.orEmpty(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FailureRose
+                )
+            }
+        } else if (users.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

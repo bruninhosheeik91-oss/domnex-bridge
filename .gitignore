@@ -13,3 +13,9 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Supabase local state + secrets (nunca versionar)
+supabase/.temp/
+supabase/.branches/
+supabase/functions/.env
+.env

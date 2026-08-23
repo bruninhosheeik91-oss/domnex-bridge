@@ -16,7 +16,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -26,18 +30,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.domnex.cfi.bridge.auth.AccessFilter
-import com.domnex.cfi.bridge.auth.LocalUserDirectory
+import com.domnex.cfi.bridge.auth.AuthProvider
 import com.domnex.cfi.bridge.auth.UserStatus
+import com.domnex.cfi.bridge.ui.components.BadgeTone
 import com.domnex.cfi.bridge.ui.components.BridgeCard
 import com.domnex.cfi.bridge.ui.components.DevDataBadge
 import com.domnex.cfi.bridge.ui.components.SectionCaption
+import com.domnex.cfi.bridge.ui.components.StatusBadge
 import com.domnex.cfi.bridge.ui.theme.FailureRose
 import com.domnex.cfi.bridge.ui.theme.Gold
 import com.domnex.cfi.bridge.ui.theme.MicroCaps
 import com.domnex.cfi.bridge.ui.theme.TextMuted
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private const val DEMO_ACTIVE_BRIDGES = 7
+
+private data class AdminStats(
+    val totalAccesses: Int,
+    val clientsCount: Int,
+    val attentionCount: Int,
+    val clientNames: List<String>
+)
 
 @Composable
 fun AdminHomeScreen(
@@ -46,14 +61,30 @@ fun AdminHomeScreen(
     dataVersion: Int = 0,
     modifier: Modifier = Modifier
 ) {
-    val totalAccesses = remember(dataVersion) { LocalUserDirectory.listUsers().size }
-    val clientsCount = remember(dataVersion) {
-        LocalUserDirectory.listUsers(filter = AccessFilter.CLIENTS).size
+    var stats by remember { mutableStateOf<AdminStats?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(dataVersion) {
+        loadError = null
+        stats = withContext(Dispatchers.IO) {
+            runCatching {
+                val directory = AuthProvider.userDirectory
+                val allUsers = directory.listUsers()
+                val clients = directory.listUsers(filter = AccessFilter.CLIENTS)
+                AdminStats(
+                    totalAccesses = allUsers.size,
+                    clientsCount = clients.size,
+                    attentionCount = allUsers.count { it.status != UserStatus.ACTIVE },
+                    clientNames = directory.findClientNames()
+                )
+            }.onFailure { error ->
+                stats = null
+                loadError = error.message ?: "Falha ao carregar dados."
+            }.getOrNull()
+        }
     }
-    val attentionCount = remember(dataVersion) {
-        LocalUserDirectory.listUsers().count { it.status != UserStatus.ACTIVE }
-    }
-    val demoClients = remember(dataVersion) { LocalUserDirectory.findClientNames() }
+
+    val remoteBackend = AuthProvider.usingLocalDevBackend.not()
 
     Column(
         modifier = modifier
@@ -86,19 +117,23 @@ fun AdminHomeScreen(
         )
 
         Spacer(Modifier.height(14.dp))
-        DevDataBadge()
+        if (remoteBackend) {
+            StatusBadge(text = "BACKEND SUPABASE", tone = BadgeTone.Info)
+        } else {
+            DevDataBadge()
+        }
         Spacer(Modifier.height(18.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             KpiCard(
                 label = "CLIENTES",
-                value = clientsCount.toString(),
-                caption = "clientes na base demo",
+                value = stats?.clientsCount?.toString() ?: "…",
+                caption = "clientes na base",
                 modifier = Modifier.weight(1f)
             )
             KpiCard(
                 label = "ACESSOS",
-                value = totalAccesses.toString(),
+                value = stats?.totalAccesses?.toString() ?: "…",
                 caption = "usuários com acesso criado",
                 modifier = Modifier.weight(1f)
             )
@@ -108,12 +143,12 @@ fun AdminHomeScreen(
             KpiCard(
                 label = "BRIDGES ATIVOS",
                 value = DEMO_ACTIVE_BRIDGES.toString(),
-                caption = "valor demonstrativo (DEV)",
+                caption = "valor demonstrativo",
                 modifier = Modifier.weight(1f)
             )
             KpiCard(
                 label = "REQUER ATENÇÃO",
-                value = attentionCount.toString(),
+                value = stats?.attentionCount?.toString() ?: "…",
                 caption = "pendentes ou suspensos",
                 modifier = Modifier.weight(1f)
             )
@@ -140,18 +175,33 @@ fun AdminHomeScreen(
         BridgeCard(modifier = Modifier.fillMaxWidth()) {
             Column {
                 Text(
-                    text = "CLIENTES DE TESTE (DEV)",
+                    text = if (remoteBackend) "CLIENTES CADASTRADOS" else "CLIENTES DE TESTE (DEV)",
                     style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.1.sp),
                     color = Gold.copy(alpha = 0.75f),
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(8.dp))
-                demoClients.forEach { client ->
+                val clients = stats?.clientNames.orEmpty()
+                if (loadError != null) {
                     Text(
-                        text = "· $client",
+                        text = loadError.orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
+                        color = FailureRose
                     )
+                } else if (clients.isEmpty()) {
+                    Text(
+                        text = "Carregando clientes...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextMuted
+                    )
+                } else {
+                    clients.forEach { client ->
+                        Text(
+                            text = "· $client",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                    }
                 }
             }
         }

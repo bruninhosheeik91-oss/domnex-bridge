@@ -19,10 +19,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -30,7 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.domnex.cfi.bridge.auth.LocalUserDirectory
+import com.domnex.cfi.bridge.auth.AuthProvider
+import com.domnex.cfi.bridge.auth.UserAccount
 import com.domnex.cfi.bridge.auth.UserStatus
 import com.domnex.cfi.bridge.ui.components.BridgeCard
 import com.domnex.cfi.bridge.ui.components.BridgeStatusDot
@@ -45,6 +48,9 @@ import com.domnex.cfi.bridge.ui.theme.Gold
 import com.domnex.cfi.bridge.ui.theme.SuccessGreen
 import com.domnex.cfi.bridge.ui.theme.TextMuted
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun UserDetailScreen(
@@ -56,8 +62,34 @@ fun UserDetailScreen(
     var tick by remember { mutableIntStateOf(0) }
     var showEditInfo by rememberSaveable { mutableStateOf(false) }
     var resetSentTick by rememberSaveable { mutableIntStateOf(0) }
+    var actionBusy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-    val user = remember(userId, tick) { LocalUserDirectory.getUser(userId) }
+    var user by remember(userId) { mutableStateOf<UserAccount?>(null) }
+    var loading by remember(userId) { mutableStateOf(true) }
+
+    LaunchedEffect(userId, tick) {
+        loading = true
+        user = withContext(Dispatchers.IO) {
+            runCatching { AuthProvider.userDirectory.getUser(userId) }.getOrNull()
+        }
+        loading = false
+    }
+
+    fun changeStatus(target: UserStatus) {
+        if (actionBusy) return
+        actionBusy = true
+        scope.launch {
+            val updated = withContext(Dispatchers.IO) {
+                AuthProvider.userDirectory.setStatus(userId, target)
+            }
+            actionBusy = false
+            if (updated) {
+                tick++
+                onDataChanged()
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -90,7 +122,18 @@ fun UserDetailScreen(
             )
         }
 
-        if (user == null) {
+        if (loading) {
+            Spacer(Modifier.height(24.dp))
+            Text(
+                text = "Carregando acesso...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextMuted
+            )
+            return@Column
+        }
+
+        val currentUser = user
+        if (currentUser == null) {
             Spacer(Modifier.height(24.dp))
             Text(
                 text = "Usuário não encontrado.",
@@ -99,6 +142,7 @@ fun UserDetailScreen(
             )
             return@Column
         }
+        val user = currentUser
 
         Spacer(Modifier.height(18.dp))
         BridgeCard(modifier = Modifier.fillMaxWidth()) {
@@ -171,23 +215,17 @@ fun UserDetailScreen(
                 Spacer(Modifier.height(10.dp))
                 DangerAction(
                     text = "Suspender acesso",
-                    onClick = {
-                        LocalUserDirectory.setStatus(user.id, UserStatus.SUSPENDED)
-                        tick++
-                        onDataChanged()
-                    }
+                    enabled = !actionBusy,
+                    onClick = { changeStatus(UserStatus.SUSPENDED) }
                 )
             }
             UserStatus.SUSPENDED -> {
                 Spacer(Modifier.height(10.dp))
                 GoldPrimaryButton(
                     text = "REATIVAR ACESSO",
-                    onClick = {
-                        LocalUserDirectory.setStatus(user.id, UserStatus.ACTIVE)
-                        tick++
-                        onDataChanged()
-                    },
-                    modifier = Modifier.fillMaxWidth()
+                    onClick = { changeStatus(UserStatus.ACTIVE) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !actionBusy
                 )
             }
         }
@@ -253,11 +291,13 @@ fun UserDetailScreen(
 private fun DangerAction(
     text: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         onClick = onClick,
+        enabled = enabled,
         shape = MaterialTheme.shapes.medium,
         color = FailureRose.copy(alpha = 0.08f),
         contentColor = FailureRose,
