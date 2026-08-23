@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun BridgeConfigScreen(
     onBack: () -> Unit,
+    onLogout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -67,6 +69,18 @@ fun BridgeConfigScreen(
 
             Spacer(Modifier.height(20.dp))
             CfiConfigSection()
+            Spacer(Modifier.height(32.dp))
+            TextButton(
+                onClick = onLogout,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Text(
+                    text = "Sair da conta",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = androidx.compose.ui.graphics.Color(0xFFF43F5E),
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
             Spacer(Modifier.height(48.dp))
         }
     }
