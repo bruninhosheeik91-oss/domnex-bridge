@@ -33,6 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.domnex.cfi.bridge.service.BridgeForegroundService
+import com.domnex.cfi.bridge.service.BridgeMonitor
+import com.domnex.cfi.bridge.service.BridgeRuntimeState
 import com.domnex.cfi.bridge.service.TonAccessibilityService
 import com.domnex.cfi.bridge.ui.components.BridgeCard
 import com.domnex.cfi.bridge.ui.components.BridgeStatusDot
@@ -51,9 +54,17 @@ fun HomeScreen(
     onOpenConfig: () -> Unit = {}
 ) {
     val isRunning by TonAccessibilityService.isRunning.collectAsState()
+    val monitorEnabled by BridgeMonitor.enabled.collectAsState()
     val lastSale by TonAccessibilityService.lastSale.collectAsState()
     val lastLog by TonAccessibilityService.lastLog.collectAsState()
     val context = LocalContext.current
+
+    // Estado operacional REAL: PAUSED (usuário) > NEEDS_PERMISSION (acessibilidade).
+    val runtimeState = BridgeRuntimeState.resolve(
+        monitorEnabled = monitorEnabled,
+        accessibilityRunning = isRunning
+    )
+    val monitoringActive = runtimeState == BridgeRuntimeState.ACTIVE
 
     Box(
         Modifier
@@ -71,19 +82,27 @@ fun HomeScreen(
             HomeHeader()
             Spacer(Modifier.height(24.dp))
             MonitoringCard(
-                active = isRunning,
+                state = runtimeState,
+                onPauseBridge = {
+                    BridgeMonitor.setEnabled(context, false)
+                    BridgeForegroundService.stop(context)
+                },
+                onActivateBridge = {
+                    BridgeMonitor.setEnabled(context, true)
+                    BridgeForegroundService.start(context)
+                },
                 onOpenAccessibilitySettings = {
                     context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 }
             )
             Spacer(Modifier.height(18.dp))
-            OperationalHealthIndicator(isRunning = isRunning, lastLog = lastLog)
+            OperationalHealthIndicator(isRunning = monitoringActive, lastLog = lastLog)
             Spacer(Modifier.height(24.dp))
 
             if (lastSale.hasData) {
                 LastSaleCard(sale = lastSale)
             } else {
-                WaitingFirstSaleCard(isMonitoring = isRunning)
+                WaitingFirstSaleCard(isMonitoring = monitoringActive)
             }
 
             if (lastLog.isNotBlank()) {

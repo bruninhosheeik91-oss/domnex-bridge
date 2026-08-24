@@ -8,6 +8,7 @@ import com.domnex.cfi.bridge.auth.supabase.SupabaseHttpClient
 import com.domnex.cfi.bridge.auth.supabase.toUserAccount
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -23,12 +24,19 @@ class DirectoryRequestException(message: String, cause: Throwable? = null) :
  * - Leitura de perfis/clientes: PostgREST direto — a segurança vem das policies RLS
  *   no banco (um CLIENT nunca recebe linhas de outros clientes; só DOMNEX_ADMIN
  *   ativo enxerga tudo). Nada é decidido apenas na interface.
- * - Suspender/reabilitar: RPC seguro [bridge_admin_set_user_status], SECURITY DEFINER,
+ * - Suspender/reabilitar: RPC segura [bridge_admin_set_user_status], SECURITY DEFINER,
  *   que revalida o papel do chamador no servidor.
- * - Criar novo acesso: exige função de backend privilegiada (Edge Function
- *   `admin-create-access`), pois criar usuários do Auth requer service_role — que
- *   NUNCA vai para dentro do APK. Se a Edge Function ainda não estiver implantada,
- *   a operação falha explicitamente (sem simular sucesso).
+ * - Editar nome/perfil/status/cliente: RPC segura [bridge_admin_update_access]
+ *   (SECURITY DEFINER), que revalida DOMNEX_ADMIN+ACTIVE e as regras de vínculo
+ *   NO SERVIDOR antes de aplicar.
+ * - Criar novo acesso / trocar e-mail: exigem funções de backend privilegiadas
+ *   (Edge Functions `admin-create-access` e `admin-update-email`), pois operações
+ *   em auth.users requerem service_role — que NUNCA vai para dentro do APK.
+ *   Se as Edge Functions ainda não estiverem implantadas, a operação falha
+ *   explicitamente (sem simular sucesso).
+ * - Redefinição de senha: endpoint público real `/auth/v1/recover` do Supabase.
+ *   A entrega do e-mail depende de SMTP configurado no projeto; isso é informado
+ *   claramente na interface — nunca é reportado como "redefinido".
  *
  * Métodos bloqueantes: chamar fora da main thread.
  */
@@ -66,11 +74,11 @@ class RemoteUserDirectory(
     override fun getUser(userId: String): UserAccount? =
         fetchProfiles(id = userId).firstOrNull()?.toUserAccount()
 
-    override fun findClientNames(): List<String> {
+    override fun findClients(): List<ClientRef> {
         val response = try {
             httpClient.execute(
                 HttpRequest(
-                    url = config.restUrl("/bridge_clients?select=name&order=name.asc"),
+                    url = config.restUrl("/bridge_clients?select=id,name&order=name.asc"),
                     method = "GET",
                     headers = baseHeaders()
                 )
@@ -82,7 +90,7 @@ class RemoteUserDirectory(
         val rows = runCatching {
             json.decodeFromString<List<BridgeClientRow>>(response.bodyText())
         }.getOrThrow()
-        return rows.map { it.name }
+        return rows.map { ClientRef(id = it.id, name = it.name) }
     }
 
     override fun createAccess(
@@ -139,30 +147,158 @@ class RemoteUserDirectory(
         }
     }
 
-    override fun setStatus(userId: String, status: UserStatus): Boolean {
-        if (!config.isConfigured()) return false
-        val token = accessTokenProvider() ?: return false
+    override fun setStatus(userId: String, status: UserStatus): StatusChangeOutcome {
+        if (!config.isConfigured()) {
+            return StatusChangeOutcome.Failed("Backend Supabase não configurado neste build.")
+        }
+        val token = accessTokenProvider()
+            ?: return StatusChangeOutcome.Failed("Sessão administrativa expirada. Entre novamente.")
 
         val body = buildJsonObject {
             put("p_user_id", userId)
             put("p_new_status", status.name)
         }
 
-        return try {
-            val response = httpClient.execute(
+        val response = try {
+            httpClient.execute(
                 HttpRequest(
                     url = config.restUrl("/rpc/bridge_admin_set_user_status"),
                     method = "POST",
                     headers = baseHeaders(token),
-                    body = json.encodeToString(
-                        kotlinx.serialization.json.JsonObject.serializer(),
-                        body
-                    ).toByteArray(Charsets.UTF_8)
+                    body = json.encodeToString(JsonObject.serializer(), body)
+                        .toByteArray(Charsets.UTF_8)
                 )
             )
-            response.statusCode in 200..299
         } catch (_: java.io.IOException) {
-            false
+            return StatusChangeOutcome.Failed("Falha de rede ao contatar o backend.")
+        }
+
+        return if (response.statusCode in 200..299) {
+            StatusChangeOutcome.Updated
+        } else {
+            StatusChangeOutcome.Failed(
+                errorMessage(response.bodyText(), "Backend recusou a alteração de status (HTTP ${response.statusCode}).")
+            )
+        }
+    }
+
+    override fun updateAccess(userId: String, update: AccessUpdate): UpdateAccessOutcome {
+        if (!config.isConfigured()) {
+            return UpdateAccessOutcome.Failed("Backend Supabase não configurado neste build.")
+        }
+        if (!update.hasChanges()) return UpdateAccessOutcome.Updated
+        val token = accessTokenProvider()
+            ?: return UpdateAccessOutcome.Failed("Sessão administrativa expirada. Entre novamente.")
+
+        // Somente os campos alterados seguem para a RPC (NULL = manter atual).
+        val body = buildJsonObject {
+            put("p_target_user_id", userId)
+            update.name?.let { put("p_name", it.trim()) }
+            update.role?.let { put("p_role", it.name) }
+            update.status?.let { put("p_status", it.name) }
+            update.clientId?.let { put("p_client_id", it) }
+            if (update.clearClient) put("p_clear_client", true)
+        }
+
+        val response = try {
+            httpClient.execute(
+                HttpRequest(
+                    url = config.restUrl("/rpc/bridge_admin_update_access"),
+                    method = "POST",
+                    headers = baseHeaders(token),
+                    body = json.encodeToString(JsonObject.serializer(), body)
+                        .toByteArray(Charsets.UTF_8)
+                )
+            )
+        } catch (_: java.io.IOException) {
+            return UpdateAccessOutcome.Failed("Falha de rede ao contatar o backend.")
+        }
+
+        return if (response.statusCode in 200..299) {
+            UpdateAccessOutcome.Updated
+        } else {
+            UpdateAccessOutcome.Failed(
+                errorMessage(response.bodyText(), "Backend recusou a edição (HTTP ${response.statusCode}).")
+            )
+        }
+    }
+
+    override fun changeEmail(userId: String, newEmail: String): EmailChangeOutcome {
+        if (!config.isConfigured()) {
+            return EmailChangeOutcome.Failed("Backend Supabase não configurado neste build.")
+        }
+        val token = accessTokenProvider()
+            ?: return EmailChangeOutcome.Failed("Sessão administrativa expirada. Entre novamente.")
+
+        val normalizedEmail = newEmail.trim().lowercase()
+        val body = buildJsonObject {
+            put("user_id", userId)
+            put("email", normalizedEmail)
+        }
+
+        val response = try {
+            httpClient.execute(
+                HttpRequest(
+                    url = config.functionsUrl(ADMIN_UPDATE_EMAIL_FUNCTION),
+                    method = "POST",
+                    headers = baseHeaders(token),
+                    body = json.encodeToString(JsonObject.serializer(), body)
+                        .toByteArray(Charsets.UTF_8)
+                )
+            )
+        } catch (_: java.io.IOException) {
+            return EmailChangeOutcome.Failed("Falha de rede ao contatar o backend.")
+        }
+
+        val parsed = runCatching {
+            json.decodeFromString(EdgeErrorResponse.serializer(), response.bodyText())
+        }.getOrNull()
+
+        return when {
+            response.statusCode in 200..299 -> EmailChangeOutcome.Changed
+            response.statusCode == 409 -> EmailChangeOutcome.Failed("Já existe um acesso com este e-mail.")
+            else -> EmailChangeOutcome.Failed(
+                parsed?.detail ?: parsed?.error
+                    ?: "Backend recusou a alteração de e-mail (HTTP ${response.statusCode})."
+            )
+        }
+    }
+
+    override fun sendPasswordReset(userId: String): PasswordResetOutcome {
+        if (!config.isConfigured()) {
+            return PasswordResetOutcome.Failed("Backend Supabase não configurado neste build.")
+        }
+
+        val target = getUser(userId)
+            ?: return PasswordResetOutcome.Failed("Usuário não encontrado para redefinição.")
+
+        val body = buildJsonObject { put("email", target.email) }
+        val response = try {
+            httpClient.execute(
+                HttpRequest(
+                    url = config.authUrl("/recover"),
+                    method = "POST",
+                    // Endpoint público de redefinição do GoTrue: apenas apikey,
+                    // sem o Bearer administrativo da sessão.
+                    headers = linkedMapOf(
+                        "apikey" to config.anonKey,
+                        "Content-Type" to "application/json",
+                        "Accept" to "application/json"
+                    ),
+                    body = json.encodeToString(JsonObject.serializer(), body)
+                        .toByteArray(Charsets.UTF_8)
+                )
+            )
+        } catch (_: java.io.IOException) {
+            return PasswordResetOutcome.Failed("Falha de rede ao solicitar redefinição.")
+        }
+
+        return if (response.statusCode in 200..299) {
+            PasswordResetOutcome.Requested
+        } else {
+            PasswordResetOutcome.Failed(
+                errorMessage(response.bodyText(), "Supabase recusou a solicitação (HTTP ${response.statusCode}).")
+            )
         }
     }
 
@@ -203,8 +339,20 @@ class RemoteUserDirectory(
         throw DirectoryRequestException(message)
     }
 
+    /**
+     * Extrai a mensagem real devolvida pelo servidor (RPC/PostgREST/Edge Function)
+     * para que erros de negócio apareçam como são — sem virar falso sucesso.
+     */
+    private fun errorMessage(bodyText: String, fallback: String): String {
+        val parsed = runCatching {
+            json.decodeFromString(ErrorBody.serializer(), bodyText)
+        }.getOrNull()
+        return parsed?.message ?: parsed?.detail ?: parsed?.error ?: fallback
+    }
+
     companion object {
         const val ADMIN_CREATE_ACCESS_FUNCTION = "admin-create-access"
+        const val ADMIN_UPDATE_EMAIL_FUNCTION = "admin-update-email"
     }
 }
 
@@ -226,4 +374,17 @@ private data class CreateAccessResponse(
     val status: String? = null,
     val error: String? = null,
     val detail: String? = null
+)
+
+@Serializable
+private data class EdgeErrorResponse(
+    val error: String? = null,
+    val detail: String? = null
+)
+
+@Serializable
+private data class ErrorBody(
+    val message: String? = null,
+    val detail: String? = null,
+    val error: String? = null
 )

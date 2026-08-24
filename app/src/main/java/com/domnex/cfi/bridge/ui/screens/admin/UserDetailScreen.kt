@@ -13,11 +13,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.domnex.cfi.bridge.auth.AuthProvider
+import com.domnex.cfi.bridge.auth.PasswordResetOutcome
+import com.domnex.cfi.bridge.auth.StatusChangeOutcome
 import com.domnex.cfi.bridge.auth.UserAccount
 import com.domnex.cfi.bridge.auth.UserStatus
 import com.domnex.cfi.bridge.ui.components.BridgeCard
@@ -44,7 +44,6 @@ import com.domnex.cfi.bridge.ui.components.formatDate
 import com.domnex.cfi.bridge.ui.components.statusColor
 import com.domnex.cfi.bridge.ui.components.statusLabel
 import com.domnex.cfi.bridge.ui.theme.FailureRose
-import com.domnex.cfi.bridge.ui.theme.Gold
 import com.domnex.cfi.bridge.ui.theme.SuccessGreen
 import com.domnex.cfi.bridge.ui.theme.TextMuted
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
@@ -57,12 +56,14 @@ fun UserDetailScreen(
     userId: String,
     onBack: () -> Unit,
     onDataChanged: () -> Unit,
+    onEditUser: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var tick by remember { mutableIntStateOf(0) }
-    var showEditInfo by rememberSaveable { mutableStateOf(false) }
-    var resetSentTick by rememberSaveable { mutableIntStateOf(0) }
     var actionBusy by remember { mutableStateOf(false) }
+    var actionError by rememberSaveable { mutableStateOf<String?>(null) }
+    var resetState by rememberSaveable { mutableStateOf("idle") } // idle | busy | requested | failed
+    var resetError by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     var user by remember(userId) { mutableStateOf<UserAccount?>(null) }
@@ -79,14 +80,36 @@ fun UserDetailScreen(
     fun changeStatus(target: UserStatus) {
         if (actionBusy) return
         actionBusy = true
+        actionError = null
         scope.launch {
-            val updated = withContext(Dispatchers.IO) {
+            val outcome = withContext(Dispatchers.IO) {
                 AuthProvider.userDirectory.setStatus(userId, target)
             }
             actionBusy = false
-            if (updated) {
-                tick++
-                onDataChanged()
+            when (outcome) {
+                StatusChangeOutcome.Updated -> {
+                    tick++
+                    onDataChanged()
+                }
+                is StatusChangeOutcome.Failed -> actionError = outcome.message
+            }
+        }
+    }
+
+    fun requestPasswordReset() {
+        if (resetState == "busy") return
+        resetState = "busy"
+        resetError = null
+        scope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                AuthProvider.userDirectory.sendPasswordReset(userId)
+            }
+            when (outcome) {
+                PasswordResetOutcome.Requested -> resetState = "requested"
+                is PasswordResetOutcome.Failed -> {
+                    resetError = outcome.message
+                    resetState = "failed"
+                }
             }
         }
     }
@@ -190,17 +213,27 @@ fun UserDetailScreen(
             }
         }
 
+        if (actionError != null) {
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = actionError.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = FailureRose,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
         Spacer(Modifier.height(20.dp))
         SectionCaption("AÇÕES")
         Spacer(Modifier.height(10.dp))
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            onClick = { showEditInfo = true },
+            onClick = onEditUser,
             shape = MaterialTheme.shapes.medium,
             color = Color.White.copy(alpha = 0.04f),
-            contentColor = Gold,
-            border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f))
+            contentColor = com.domnex.cfi.bridge.ui.theme.Gold,
+            border = BorderStroke(1.dp, com.domnex.cfi.bridge.ui.theme.Gold.copy(alpha = 0.35f))
         ) {
             Text(
                 text = "Editar acesso",
@@ -222,7 +255,7 @@ fun UserDetailScreen(
             UserStatus.SUSPENDED -> {
                 Spacer(Modifier.height(10.dp))
                 GoldPrimaryButton(
-                    text = "REATIVAR ACESSO",
+                    text = if (actionBusy) "AGUARDE..." else "REATIVAR ACESSO",
                     onClick = { changeStatus(UserStatus.ACTIVE) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !actionBusy
@@ -233,7 +266,8 @@ fun UserDetailScreen(
         Spacer(Modifier.height(10.dp))
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            onClick = { resetSentTick++ },
+            onClick = { requestPasswordReset() },
+            enabled = resetState != "busy",
             shape = MaterialTheme.shapes.medium,
             color = Color.White.copy(alpha = 0.04f),
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -241,16 +275,26 @@ fun UserDetailScreen(
         ) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
                 Text(
-                    text = "Enviar redefinição de senha",
+                    text = if (resetState == "busy") "Solicitando redefinição..." else "Enviar redefinição de senha",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.ExtraBold
                 )
-                if (resetSentTick > 0) {
+                if (resetState == "requested") {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Convite de redefinição seria enviado para ${user.email} (simulado).",
+                        text = "Solicitação aceita pelo Supabase para ${user.email}. " +
+                            "O e-mail chega somente se o projeto tiver SMTP configurado " +
+                            "(Authentication → Emails).",
                         style = MaterialTheme.typography.bodySmall,
                         color = SuccessGreen
+                    )
+                }
+                if (resetError != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = resetError.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = FailureRose
                     )
                 }
             }
@@ -263,27 +307,6 @@ fun UserDetailScreen(
             color = TextMuted
         )
         Spacer(Modifier.height(30.dp))
-    }
-
-    if (showEditInfo) {
-        AlertDialog(
-            onDismissRequest = { showEditInfo = false },
-            title = {
-                Text(text = "Editar acesso", style = MaterialTheme.typography.titleMedium)
-            },
-            text = {
-                Text(
-                    text = "A edição completa (nome, e-mail e cliente vinculado) será habilitada quando o backend de autenticação estiver integrado.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showEditInfo = false }) {
-                    Text(text = "Entendi", color = Gold, fontWeight = FontWeight.ExtraBold)
-                }
-            }
-        )
     }
 }
 

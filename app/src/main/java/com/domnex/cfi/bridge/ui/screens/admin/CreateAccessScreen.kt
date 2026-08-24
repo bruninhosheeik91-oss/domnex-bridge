@@ -73,7 +73,7 @@ fun CreateAccessScreen(
 
     LaunchedEffect(Unit) {
         clientNames = withContext(Dispatchers.IO) {
-            runCatching { AuthProvider.userDirectory.findClientNames() }.getOrDefault(emptyList())
+            runCatching { AuthProvider.userDirectory.findClients().map { it.name } }.getOrDefault(emptyList())
         }
     }
 

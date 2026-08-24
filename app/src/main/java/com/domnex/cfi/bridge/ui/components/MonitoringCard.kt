@@ -6,25 +6,37 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.domnex.cfi.bridge.service.BridgeRuntimeState
+import com.domnex.cfi.bridge.ui.theme.FailureRose
+import com.domnex.cfi.bridge.ui.theme.Gold
 import com.domnex.cfi.bridge.ui.theme.SuccessGreen
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
 
 @Composable
 fun MonitoringCard(
-    active: Boolean,
+    state: BridgeRuntimeState,
+    onPauseBridge: () -> Unit,
+    onActivateBridge: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val accent = if (active) SuccessGreen else MaterialTheme.colorScheme.error
+    val accent = when (state) {
+        BridgeRuntimeState.ACTIVE -> SuccessGreen
+        BridgeRuntimeState.PAUSED -> Gold
+        BridgeRuntimeState.NEEDS_PERMISSION -> FailureRose
+    }
     BridgeCard(modifier = modifier.fillMaxWidth(), contentPadding = PaddingValues(18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -36,7 +48,10 @@ fun MonitoringCard(
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = if (active) "Bridge ativo" else "Monitoramento desativado",
+                    text = when (state) {
+                        BridgeRuntimeState.ACTIVE, BridgeRuntimeState.NEEDS_PERMISSION -> "Bridge ativo"
+                        BridgeRuntimeState.PAUSED -> "Bridge pausado"
+                    },
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -49,20 +64,69 @@ fun MonitoringCard(
             BridgeStatusDot(color = accent, size = 8.dp, glowRadius = 5.dp)
             Spacer(Modifier.width(8.dp))
             Text(
-                text = if (active) "Monitorando vendas da TON" else "Ação necessária",
+                text = when (state) {
+                    BridgeRuntimeState.ACTIVE -> "Monitorando vendas da TON"
+                    BridgeRuntimeState.PAUSED -> "O monitoramento da TON está temporariamente desligado."
+                    BridgeRuntimeState.NEEDS_PERMISSION -> "Ação necessária"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = accent,
                 fontWeight = FontWeight.Bold
             )
         }
 
-        if (!active) {
-            Spacer(Modifier.height(14.dp))
-            GoldPrimaryButton(
-                text = "Configurações de Acessibilidade",
-                onClick = onOpenAccessibilitySettings,
-                modifier = Modifier.fillMaxWidth()
-            )
+        Spacer(Modifier.height(14.dp))
+
+        when (state) {
+            BridgeRuntimeState.ACTIVE -> {
+                PauseActivateAction(
+                    text = "Pausar Bridge",
+                    containerColor = Color.White.copy(alpha = 0.04f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    borderColor = Color.White.copy(alpha = 0.12f),
+                    onClick = onPauseBridge
+                )
+            }
+            BridgeRuntimeState.PAUSED -> {
+                GoldPrimaryButton(
+                    text = "Ativar Bridge",
+                    onClick = onActivateBridge,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            BridgeRuntimeState.NEEDS_PERMISSION -> {
+                GoldPrimaryButton(
+                    text = "Configurações de Acessibilidade",
+                    onClick = onOpenAccessibilitySettings,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun PauseActivateAction(
+    text: String,
+    containerColor: Color,
+    contentColor: Color,
+    borderColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        color = containerColor,
+        contentColor = contentColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+        )
     }
 }

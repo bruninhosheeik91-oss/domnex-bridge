@@ -27,6 +27,11 @@ class BridgeForegroundService : Service() {
                 Intent(context, BridgeForegroundService::class.java)
             )
         }
+
+        /** Parada controlada: remove ticker/notificação sem tocar em configurações. */
+        fun stop(context: Context) {
+            context.stopService(Intent(context, BridgeForegroundService::class.java))
+        }
     }
 
     private val tickerHandler = Handler(Looper.getMainLooper())

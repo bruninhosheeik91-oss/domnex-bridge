@@ -95,6 +95,8 @@ class TonAccessibilityService : AccessibilityService() {
     private var refreshLoggedNoAccessible = false
 
     fun runPollCycle() {
+        // Pausa operacional: usuário desligou o monitoramento (nada é processado).
+        if (!BridgeMonitor.isActive()) return
         // ── DIAG TEMP ──
         val diagRoot = rootInActiveWindow
         Log.d(
@@ -286,6 +288,9 @@ class TonAccessibilityService : AccessibilityService() {
         if (event == null) return
         val pkg = event.packageName?.toString() ?: return
         if (pkg != TON_PACKAGE) return
+        // Pausa operacional: eventos da TON continuam chegando, mas o Bridge
+        // não processa nada enquanto estiver pausado pelo usuário.
+        if (!BridgeMonitor.isActive()) return
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,

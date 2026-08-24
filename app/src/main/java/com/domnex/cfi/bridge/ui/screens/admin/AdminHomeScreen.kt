@@ -75,7 +75,7 @@ fun AdminHomeScreen(
                     totalAccesses = allUsers.size,
                     clientsCount = clients.size,
                     attentionCount = allUsers.count { it.status != UserStatus.ACTIVE },
-                    clientNames = directory.findClientNames()
+                    clientNames = directory.findClients().map { it.name }
                 )
             }.onFailure { error ->
                 stats = null

@@ -12,7 +12,8 @@ private enum class AdminRoute {
     HOME,
     ACCESSES,
     CREATE_ACCESS,
-    USER_DETAIL
+    USER_DETAIL,
+    EDIT_USER
 }
 
 @Composable
@@ -63,6 +64,21 @@ fun AdminRoot(
                         dataVersion++
                         route = AdminRoute.ACCESSES
                     },
+                    onDataChanged = { dataVersion++ },
+                    onEditUser = { route = AdminRoute.EDIT_USER },
+                    modifier = modifier
+                )
+            }
+        }
+
+        AdminRoute.EDIT_USER -> {
+            val currentUserId = selectedUserId
+            if (currentUserId == null) {
+                route = AdminRoute.ACCESSES
+            } else {
+                EditAccessScreen(
+                    userId = currentUserId,
+                    onBack = { route = AdminRoute.USER_DETAIL },
                     onDataChanged = { dataVersion++ },
                     modifier = modifier
                 )
