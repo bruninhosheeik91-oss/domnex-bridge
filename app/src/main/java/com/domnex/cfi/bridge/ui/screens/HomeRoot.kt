@@ -7,19 +7,29 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 
+private enum class HomeRoute { HOME, ACTIVITY, ACCOUNT }
+
 @Composable
 fun HomeRoot(
     onLogout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var showConfig by rememberSaveable { mutableStateOf(false) }
-    if (showConfig) {
-        BridgeConfigScreen(
-            onBack = { showConfig = false },
+    var route by rememberSaveable { mutableStateOf(HomeRoute.HOME) }
+    when (route) {
+        HomeRoute.HOME -> HomeScreen(
+            onOpenActivity = { route = HomeRoute.ACTIVITY },
+            onOpenAccount = { route = HomeRoute.ACCOUNT }
+        )
+
+        HomeRoute.ACTIVITY -> ActivityScreen(
+            onBack = { route = HomeRoute.HOME },
+            modifier = modifier
+        )
+
+        HomeRoute.ACCOUNT -> AccountScreen(
+            onBack = { route = HomeRoute.HOME },
             onLogout = onLogout,
             modifier = modifier
         )
-    } else {
-        HomeScreen(onOpenConfig = { showConfig = true })
     }
 }

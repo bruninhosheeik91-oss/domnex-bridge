@@ -49,8 +49,9 @@ fun MonitoringCard(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = when (state) {
-                        BridgeRuntimeState.ACTIVE, BridgeRuntimeState.NEEDS_PERMISSION -> "Bridge ativo"
+                        BridgeRuntimeState.ACTIVE -> "Bridge ativo"
                         BridgeRuntimeState.PAUSED -> "Bridge pausado"
+                        BridgeRuntimeState.NEEDS_PERMISSION -> "Requer atenção"
                     },
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface
@@ -63,16 +64,16 @@ fun MonitoringCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             BridgeStatusDot(color = accent, size = 8.dp, glowRadius = 5.dp)
             Spacer(Modifier.width(8.dp))
-            Text(
-                text = when (state) {
-                    BridgeRuntimeState.ACTIVE -> "Monitorando vendas da TON"
-                    BridgeRuntimeState.PAUSED -> "O monitoramento da TON está temporariamente desligado."
-                    BridgeRuntimeState.NEEDS_PERMISSION -> "Ação necessária"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = accent,
-                fontWeight = FontWeight.Bold
-            )
+                Text(
+                    text = when (state) {
+                        BridgeRuntimeState.ACTIVE -> "Monitoramento TON: Ativo"
+                        BridgeRuntimeState.PAUSED -> "Monitoramento TON: Pausado"
+                        BridgeRuntimeState.NEEDS_PERMISSION -> "Monitoramento TON: Permissão necessária"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = accent,
+                    fontWeight = FontWeight.Bold
+                )
         }
 
         Spacer(Modifier.height(14.dp))

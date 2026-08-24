@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.domnex.cfi.bridge.data.SaleHistory
 import com.domnex.cfi.bridge.model.SaleData
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -414,6 +415,8 @@ class TonAccessibilityService : AccessibilityService() {
         partialSale = SaleData()
         isProcessingSale = false
         if (isComplete) {
+            // Histórico local (camada aditiva) — falha aqui nunca afeta o envio.
+            SaleHistory.recordAsync(applicationContext, saleToSend)
             SaleSender.sendSale(this, saleToSend)
             pendingBack = true
             pendingBackTime = System.currentTimeMillis()

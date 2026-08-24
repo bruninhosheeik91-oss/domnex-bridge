@@ -57,6 +57,7 @@ private data class AdminStats(
 @Composable
 fun AdminHomeScreen(
     onOpenAccesses: () -> Unit,
+    onOpenTechnicalConfig: () -> Unit,
     onLogout: () -> Unit,
     dataVersion: Int = 0,
     modifier: Modifier = Modifier
@@ -163,6 +164,13 @@ fun AdminHomeScreen(
             description = "Criar, filtrar e gerenciar acessos",
             enabled = true,
             onClick = onOpenAccesses
+        )
+        Spacer(Modifier.height(8.dp))
+        ShortcutRow(
+            label = "Configuração Técnica",
+            description = "Endpoint, token e sistema de destino",
+            enabled = true,
+            onClick = onOpenTechnicalConfig
         )
         Spacer(Modifier.height(8.dp))
         ShortcutRow(label = "Clientes", description = "Gestão de clientes", enabled = false, onClick = {})

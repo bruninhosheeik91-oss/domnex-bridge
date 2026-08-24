@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -33,12 +34,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.domnex.cfi.bridge.provisioning.BridgeProvisioning
 import com.domnex.cfi.bridge.service.BridgeForegroundService
 import com.domnex.cfi.bridge.service.BridgeMonitor
 import com.domnex.cfi.bridge.service.BridgeRuntimeState
 import com.domnex.cfi.bridge.service.TonAccessibilityService
 import com.domnex.cfi.bridge.ui.components.BridgeCard
 import com.domnex.cfi.bridge.ui.components.BridgeStatusDot
+import com.domnex.cfi.bridge.ui.components.IntegrationStatusCard
 import com.domnex.cfi.bridge.ui.components.LastSaleCard
 import com.domnex.cfi.bridge.ui.components.MonitoringCard
 import com.domnex.cfi.bridge.ui.components.OperationalHealthIndicator
@@ -51,13 +54,17 @@ import com.domnex.cfi.bridge.ui.theme.TextSecondary
 
 @Composable
 fun HomeScreen(
-    onOpenConfig: () -> Unit = {}
+    onOpenActivity: () -> Unit = {},
+    onOpenAccount: () -> Unit = {}
 ) {
     val isRunning by TonAccessibilityService.isRunning.collectAsState()
     val monitorEnabled by BridgeMonitor.enabled.collectAsState()
     val lastSale by TonAccessibilityService.lastSale.collectAsState()
     val lastLog by TonAccessibilityService.lastLog.collectAsState()
     val context = LocalContext.current
+    val provisioning = remember { BridgeProvisioning.get(context) }
+    val provisioningState = remember { provisioning.state() }
+    val systemName = remember { provisioning.load().displayNameOrDefault() }
 
     // Estado operacional REAL: PAUSED (usuário) > NEEDS_PERMISSION (acessibilidade).
     val runtimeState = BridgeRuntimeState.resolve(
@@ -81,6 +88,11 @@ fun HomeScreen(
             Spacer(Modifier.height(30.dp))
             HomeHeader()
             Spacer(Modifier.height(24.dp))
+            IntegrationStatusCard(
+                provisioningState = provisioningState,
+                systemName = systemName
+            )
+            Spacer(Modifier.height(18.dp))
             MonitoringCard(
                 state = runtimeState,
                 onPauseBridge = {
@@ -111,7 +123,12 @@ fun HomeScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            ConfigShortcut(onOpenConfig = onOpenConfig)
+            Row(
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
+            ) {
+                NavPill(label = "Atividade", onClick = onOpenActivity, modifier = Modifier.weight(1f))
+                NavPill(label = "Conta", onClick = onOpenAccount, modifier = Modifier.weight(1f))
+            }
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -167,13 +184,14 @@ private fun sanitizeMotorEvent(raw: String): String {
 }
 
 @Composable
-private fun ConfigShortcut(
-    onOpenConfig: () -> Unit,
+private fun NavPill(
+    label: String,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier,
-        onClick = onOpenConfig,
+        onClick = onClick,
         shape = CircleShape,
         color = Color.White.copy(alpha = 0.05f),
         contentColor = TextSecondary,
@@ -186,7 +204,7 @@ private fun ConfigShortcut(
             BridgeStatusDot(color = Gold, size = 6.dp, glowRadius = 3.dp)
             Spacer(Modifier.size(8.dp))
             Text(
-                text = "Configuração",
+                text = label,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold
             )

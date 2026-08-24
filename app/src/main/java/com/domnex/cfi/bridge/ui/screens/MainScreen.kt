@@ -14,7 +14,8 @@ import com.domnex.cfi.bridge.auth.AuthProvider
 import com.domnex.cfi.bridge.auth.AuthRouting
 import com.domnex.cfi.bridge.auth.AuthSession
 import com.domnex.cfi.bridge.auth.RouteTarget
-import com.domnex.cfi.bridge.service.SaleSender
+import com.domnex.cfi.bridge.provisioning.BridgeProvisioning
+import com.domnex.cfi.bridge.provisioning.ProvisioningState
 import com.domnex.cfi.bridge.ui.screens.admin.AdminRoot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -35,8 +36,7 @@ fun MainScreen() {
     var destination by rememberSaveable { mutableStateOf(AppDestination.Splash) }
 
     fun isBridgeConfigured(): Boolean =
-        SaleSender.getBaseUrl(context).isNotBlank() &&
-            SaleSender.getBridgeToken(context).isNotBlank()
+        BridgeProvisioning.get(context).state() == ProvisioningState.CONFIGURED
 
     fun destinationFor(session: AuthSession): AppDestination {
         val target = AuthRouting.resolveTarget(session.user.role, isBridgeConfigured())
@@ -86,8 +86,10 @@ fun MainScreen() {
             }
         )
 
-        AppDestination.Setup -> InitialSetupScreen(
-            onEnterBridge = { destination = AppDestination.Home }
+        // Bloqueio para CLIENT sem provisionamento: nunca expõe campos técnicos.
+        AppDestination.Setup -> ClientSetupRequiredScreen(
+            onRetry = { isBridgeConfigured() },
+            onLogout = { performLogout() }
         )
 
         AppDestination.Home -> HomeRoot(

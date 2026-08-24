@@ -7,13 +7,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.domnex.cfi.bridge.ui.screens.TechnicalConfigScreen
 
 private enum class AdminRoute {
     HOME,
     ACCESSES,
     CREATE_ACCESS,
     USER_DETAIL,
-    EDIT_USER
+    EDIT_USER,
+    TECHNICAL_CONFIG
 }
 
 @Composable
@@ -28,8 +30,14 @@ fun AdminRoot(
     when (route) {
         AdminRoute.HOME -> AdminHomeScreen(
             onOpenAccesses = { route = AdminRoute.ACCESSES },
+            onOpenTechnicalConfig = { route = AdminRoute.TECHNICAL_CONFIG },
             onLogout = onLogout,
             dataVersion = dataVersion,
+            modifier = modifier
+        )
+
+        AdminRoute.TECHNICAL_CONFIG -> TechnicalConfigScreen(
+            onBack = { route = AdminRoute.HOME },
             modifier = modifier
         )
 
