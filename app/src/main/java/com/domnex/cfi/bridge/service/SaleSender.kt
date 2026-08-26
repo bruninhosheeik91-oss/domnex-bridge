@@ -2,6 +2,7 @@ package com.domnex.cfi.bridge.service
 
 import android.content.Context
 import android.util.Log
+import com.domnex.cfi.bridge.BuildConfig
 import com.domnex.cfi.bridge.model.SaleData
 import org.json.JSONArray
 import org.json.JSONObject
@@ -194,7 +195,7 @@ object SaleSender {
                         prefs.edit().putStringSet(KEY_SENT, sent).apply()
                     }
                     202 -> {
-                        Log.i(TAG, "Serial aguardando vínculo ($txCode)")
+                        if (BuildConfig.DEBUG) Log.i(TAG, "Serial aguardando vínculo ($txCode)")
                         retryArray.put(obj)
                     }
                     else -> {

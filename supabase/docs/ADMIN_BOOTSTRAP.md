@@ -9,7 +9,7 @@
 
 1. Projeto Supabase vinculado (CLI):
    ```bash
-   supabase link --project-ref mwponxhscdtxhcdyxeww
+   supabase link --project-ref bknttvuiqsrkftodcsku
    ```
 2. Migration aplicada:
    ```bash

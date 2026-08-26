@@ -19,7 +19,7 @@
 //     pode não chegar sem SMTP configurado).
 //
 // Deploy (requer CLI logado; NÃO executar automaticamente):
-//   supabase functions deploy admin-update-email --project-ref mwponxhscdtxhcdyxeww
+//   supabase functions deploy admin-update-email --project-ref bknttvuiqsrkftodcsku
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";

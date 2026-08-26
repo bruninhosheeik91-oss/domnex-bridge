@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.domnex.cfi.bridge.BuildConfig
 import com.domnex.cfi.bridge.data.SaleHistory
 import com.domnex.cfi.bridge.model.SaleData
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,15 +99,13 @@ class TonAccessibilityService : AccessibilityService() {
     fun runPollCycle() {
         // Pausa operacional: usuário desligou o monitoramento (nada é processado).
         if (!BridgeMonitor.isActive()) return
-        // ── DIAG TEMP ──
         val diagRoot = rootInActiveWindow
-        Log.d(
+        if (BuildConfig.DEBUG) Log.d(
             TAG,
             "[POLL] cycle started state=$detailState proc=$isProcessingSale " +
                     "back=$pendingBack root=${diagRoot != null} pkg=${diagRoot?.packageName ?: "null"}"
         )
         diagRoot?.recycle()
-        // ── FIM DIAG ──
         if (isProcessingSale &&
             System.currentTimeMillis() - processingStartTime >= SALE_TIMEOUT_MS
         ) {
@@ -156,9 +155,7 @@ class TonAccessibilityService : AccessibilityService() {
         }
 
         if (shouldRefresh) {
-            // ── DIAG TEMP ──
-            Log.d(TAG, "[POLL] refresh ready")
-            // ── FIM DIAG ──
+            if (BuildConfig.DEBUG) Log.d(TAG, "[POLL] refresh ready")
             tryRefreshList()
         }
     }
@@ -167,9 +164,7 @@ class TonAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return
         try {
             var button: AccessibilityNodeInfo? = null
-            // ── DIAG TEMP ──
             var via = "nenhum"
-            // ── FIM DIAG ──
 
             val candidates = root.findAccessibilityNodeInfosByViewId(
                 "$TON_PACKAGE:id/JadeNavigationBar_SecondaryAction"
@@ -189,9 +184,7 @@ class TonAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // ── DIAG TEMP ──
-            Log.d(TAG, "[POLL] refresh botao=${button != null} metodo=$via")
-            // ── FIM DIAG ──
+            if (BuildConfig.DEBUG) Log.d(TAG, "[POLL] refresh botao=${button != null} metodo=$via")
 
             if (button == null) {
                 if (!refreshLoggedNoAccessible) {
@@ -216,10 +209,8 @@ class TonAccessibilityService : AccessibilityService() {
             refreshLoggedNoAccessible = false
             Log.i(TAG, "Atualizando lista TON...")
             lastLog.value = "Atualizando lista TON..."
-            // ── DIAG TEMP ──
             val actionResult = clickableTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            Log.d(TAG, "[POLL] refresh ACTION_CLICK=$actionResult")
-            // ── FIM DIAG ──
+            if (BuildConfig.DEBUG) Log.d(TAG, "[POLL] refresh ACTION_CLICK=$actionResult")
         } catch (_: Exception) {
         } finally {
             recycleTree(root)
@@ -404,7 +395,7 @@ class TonAccessibilityService : AccessibilityService() {
             val tx = partialSale.codigoTransacao.ifEmpty { "N/A" }
             val serial = partialSale.numeroSerie.ifEmpty { "N/A" }
             lastLog.value = "Venda capturada \u2014 Tx: $tx \u2014 Serial: $serial"
-            Log.i(TAG, "Venda capturada \u2014 Tx: $tx \u2014 Serial: $serial")
+            if (BuildConfig.DEBUG) Log.i(TAG, "Venda capturada \u2014 Tx: $tx \u2014 Serial: $serial")
         }
         if (partialSale.codigoTransacao.isNotEmpty()) {
             knownTxCodes.add(partialSale.codigoTransacao)

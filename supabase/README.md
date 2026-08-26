@@ -1,7 +1,7 @@
 # Supabase — DOMNEX BRIDGE (FASE 6A)
 
 Autenticação real do app via **Supabase Auth**. Projeto vinculado:
-`mwponxhscdtxhcdyxeww` (ver `supabase/.temp/linked-project.json`).
+`bknttvuiqsrkftodcsku` (ver `supabase/.temp/linked-project.json`).
 
 ## O que existe aqui
 
@@ -28,7 +28,7 @@ Autenticação real do app via **Supabase Auth**. Projeto vinculado:
 Em `local.properties` (raiz do projeto, já ignorado pelo git):
 
 ```properties
-SUPABASE_URL=https://mwponxhscdtxhcdyxeww.supabase.co
+SUPABASE_URL=https://bknttvuiqsrkftodcsku.supabase.co
 SUPABASE_ANON_KEY=<anon/publishable key do projeto>
 ```
 
@@ -46,9 +46,9 @@ supabase db push
 ## Deploy das Edge Functions
 
 ```bash
-supabase functions deploy admin-create-access --project-ref mwponxhscdtxhcdyxeww
-supabase functions deploy admin-update-email  --project-ref mwponxhscdtxhcdyxeww
-supabase functions deploy admin-delete-client --project-ref mwponxhscdtxhcdyxeww
+supabase functions deploy admin-create-access --project-ref bknttvuiqsrkftodcsku
+supabase functions deploy admin-update-email  --project-ref bknttvuiqsrkftodcsku
+supabase functions deploy admin-delete-client --project-ref bknttvuiqsrkftodcsku
 ```
 
 No projeto hospedado, `SUPABASE_URL`, `SUPABASE_ANON_KEY` e

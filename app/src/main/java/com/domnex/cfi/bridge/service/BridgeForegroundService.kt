@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import com.domnex.cfi.bridge.BuildConfig
 import com.domnex.cfi.bridge.R
 
 class BridgeForegroundService : Service() {
@@ -37,19 +38,13 @@ class BridgeForegroundService : Service() {
     private val tickerHandler = Handler(Looper.getMainLooper())
     private val tickRunnable = object : Runnable {
         override fun run() {
-            // ── DIAG TEMP ──
-            Log.d(TAG, "[FGS] tick instance=${TonAccessibilityService.instance != null}")
-            // ── FIM DIAG ──
+            if (BuildConfig.DEBUG) Log.d(TAG, "[FGS] tick instance=${TonAccessibilityService.instance != null}")
             val accessibilityService = TonAccessibilityService.instance
             if (accessibilityService != null) {
                 accessibilityService.runPollCycle()
-                // ── DIAG TEMP ──
-                Log.d(TAG, "[FGS] tick runPollCycle chamado")
-                // ── FIM DIAG ──
+                if (BuildConfig.DEBUG) Log.d(TAG, "[FGS] tick runPollCycle chamado")
             } else {
-                // ── DIAG TEMP ──
-                Log.d(TAG, "[FGS] tick instance=null ciclo nao executado")
-                // ── FIM DIAG ──
+                if (BuildConfig.DEBUG) Log.d(TAG, "[FGS] tick instance=null ciclo nao executado")
             }
             tickerHandler.postDelayed(this, POLL_INTERVAL_MS)
         }
@@ -90,13 +85,13 @@ class BridgeForegroundService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "CFI Bridge",
+                "Domnex Bridge",
                 NotificationManager.IMPORTANCE_LOW
             )
         )
 
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("CFI Bridge")
+            .setContentTitle("Domnex Bridge")
             .setContentText("Monitoramento TON ativo")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)

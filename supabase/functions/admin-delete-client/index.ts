@@ -33,7 +33,7 @@
 //     identificada por client_id imutável (nunca por nome digitado).
 //
 // Deploy (requer CLI logado):
-//   supabase functions deploy admin-delete-client --project-ref mwponxhscdtxhcdyxeww
+//   supabase functions deploy admin-delete-client --project-ref bknttvuiqsrkftodcsku
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";

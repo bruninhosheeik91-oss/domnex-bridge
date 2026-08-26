@@ -30,7 +30,7 @@
 //   * Constraint do banco preservada: CLIENT ACTIVE exige client_id real.
 //
 // Deploy (requer CLI logado):
-//   supabase functions deploy admin-create-access --project-ref mwponxhscdtxhcdyxeww
+//   supabase functions deploy admin-create-access --project-ref bknttvuiqsrkftodcsku
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";

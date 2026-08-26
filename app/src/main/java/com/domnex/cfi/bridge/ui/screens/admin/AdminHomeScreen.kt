@@ -45,8 +45,6 @@ import com.domnex.cfi.bridge.ui.theme.TextSecondary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private const val DEMO_ACTIVE_BRIDGES = 7
-
 private data class AdminStats(
     val totalAccesses: Int,
     val clientsCount: Int,
@@ -143,12 +141,6 @@ fun AdminHomeScreen(
         }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            KpiCard(
-                label = "BRIDGES ATIVOS",
-                value = DEMO_ACTIVE_BRIDGES.toString(),
-                caption = "valor demonstrativo",
-                modifier = Modifier.weight(1f)
-            )
             KpiCard(
                 label = "REQUER ATENÇÃO",
                 value = stats?.attentionCount?.toString() ?: "…",
