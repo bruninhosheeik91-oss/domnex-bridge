@@ -58,6 +58,7 @@ import kotlinx.coroutines.withContext
 fun CreateAccessScreen(
     onBack: () -> Unit,
     onCreated: () -> Unit,
+    preSelectedClientName: String? = null,
     modifier: Modifier = Modifier
 ) {
     var name by rememberSaveable { mutableStateOf("") }
@@ -82,6 +83,9 @@ fun CreateAccessScreen(
     LaunchedEffect(Unit) {
         clientNames = withContext(Dispatchers.IO) {
             runCatching { AuthProvider.userDirectory.findClients().map { it.name } }.getOrDefault(emptyList())
+        }
+        if (!preSelectedClientName.isNullOrBlank()) {
+            selectedClient = preSelectedClientName
         }
     }
 

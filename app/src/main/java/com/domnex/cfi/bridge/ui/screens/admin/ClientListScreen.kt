@@ -25,10 +25,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,53 +35,61 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.domnex.cfi.bridge.auth.AccessFilter
 import com.domnex.cfi.bridge.auth.AuthProvider
-import com.domnex.cfi.bridge.auth.UserAccount
-import com.domnex.cfi.bridge.ui.components.BridgeTextField
+import com.domnex.cfi.bridge.auth.ClientRef
+import com.domnex.cfi.bridge.auth.UserStatus
 import com.domnex.cfi.bridge.ui.components.DevDataBadge
-import com.domnex.cfi.bridge.ui.components.FilterPill
-import com.domnex.cfi.bridge.ui.components.GoldPrimaryButton
 import com.domnex.cfi.bridge.ui.components.SectionCaption
 import com.domnex.cfi.bridge.ui.components.StatusBadge
 import com.domnex.cfi.bridge.ui.components.BadgeTone
-import com.domnex.cfi.bridge.ui.components.UserListItem
 import com.domnex.cfi.bridge.ui.theme.FailureRose
 import com.domnex.cfi.bridge.ui.theme.Gold
+import com.domnex.cfi.bridge.ui.theme.SuccessGreen
 import com.domnex.cfi.bridge.ui.theme.TextMuted
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
+import com.domnex.cfi.bridge.ui.theme.WarningAmber
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private data class ClientWithStats(
+    val client: ClientRef,
+    val totalAccesses: Int,
+    val activeCount: Int,
+    val pendingCount: Int,
+    val suspendedCount: Int
+)
+
 @Composable
-fun AccessManagementScreen(
+fun ClientListScreen(
     onBack: () -> Unit,
-    onCreateAccess: () -> Unit,
-    onOpenUser: (String) -> Unit,
+    onOpenClientDetail: (clientId: String, clientName: String) -> Unit,
     dataVersion: Int = 0,
     modifier: Modifier = Modifier
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
-    var filterIndex by rememberSaveable { mutableIntStateOf(0) }
-    val filters = listOf(
-        "Todos" to AccessFilter.ALL,
-        "Clientes" to AccessFilter.CLIENTS,
-        "Administradores" to AccessFilter.ADMINS,
-        "Suspensos" to AccessFilter.SUSPENDED
-    )
-    val activeFilter = filters[filterIndex].second
-
-    var users by remember { mutableStateOf<List<UserAccount>>(emptyList()) }
+    var clients by remember { mutableStateOf<List<ClientWithStats>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(dataVersion, query, activeFilter) {
+    LaunchedEffect(dataVersion) {
         loading = true
         loadError = null
-        users = withContext(Dispatchers.IO) {
+        clients = withContext(Dispatchers.IO) {
             runCatching {
-                AuthProvider.userDirectory.listUsers(query = query, filter = activeFilter)
+                val directory = AuthProvider.userDirectory
+                val clientRefs = directory.findClients()
+                val allUsers = directory.listUsers(filter = AccessFilter.CLIENTS)
+                clientRefs.map { ref ->
+                    val linked = allUsers.filter { it.clientName == ref.name }
+                    ClientWithStats(
+                        client = ref,
+                        totalAccesses = linked.size,
+                        activeCount = linked.count { it.status == UserStatus.ACTIVE },
+                        pendingCount = linked.count { it.status == UserStatus.PENDING },
+                        suspendedCount = linked.count { it.status == UserStatus.SUSPENDED }
+                    )
+                }
             }.onFailure { error ->
-                users = emptyList()
-                loadError = error.message ?: "Falha ao carregar acessos."
+                clients = emptyList()
+                loadError = error.message ?: "Falha ao carregar clientes."
             }.getOrDefault(emptyList())
         }
         loading = false
@@ -114,7 +120,7 @@ fun AccessManagementScreen(
             }
             Spacer(Modifier.size(12.dp))
             Text(
-                text = "Acessos · Usuários",
+                text = "Clientes",
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -127,34 +133,8 @@ fun AccessManagementScreen(
             StatusBadge(text = "BACKEND SUPABASE", tone = BadgeTone.Info)
         }
 
-        Spacer(Modifier.height(16.dp))
-        BridgeTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = "Buscar usuário",
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            filters.forEachIndexed { index, (label, _) ->
-                FilterPill(
-                    text = label,
-                    selected = index == filterIndex,
-                    onClick = { filterIndex = index }
-                )
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-        GoldPrimaryButton(
-            text = "NOVO ACESSO",
-            onClick = onCreateAccess,
-            modifier = Modifier.fillMaxWidth()
-        )
-
         Spacer(Modifier.height(18.dp))
-        SectionCaption(if (loading) "USUÁRIOS" else "USUÁRIOS (${users.size})")
+        SectionCaption(if (loading) "CLIENTES" else "CLIENTES (${clients.size})")
         Spacer(Modifier.height(10.dp))
 
         if (loading) {
@@ -166,7 +146,7 @@ fun AccessManagementScreen(
             ) {
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    text = "Carregando acessos...",
+                    text = "Carregando clientes...",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextMuted
                 )
@@ -185,7 +165,7 @@ fun AccessManagementScreen(
                     color = FailureRose
                 )
             }
-        } else if (users.isEmpty()) {
+        } else if (clients.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -194,7 +174,7 @@ fun AccessManagementScreen(
             ) {
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    text = "Nenhum usuário encontrado.",
+                    text = "Nenhum cliente encontrado.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextMuted
                 )
@@ -204,24 +184,84 @@ fun AccessManagementScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 30.dp)
             ) {
-                items(users, key = { it.id }) { user ->
-                    UserListItem(user = user, onClick = { onOpenUser(user.id) })
+                items(clients, key = { it.client.id }) { clientWithStats ->
+                    ClientListItem(
+                        clientWithStats = clientWithStats,
+                        onClick = { onOpenClientDetail(clientWithStats.client.id, clientWithStats.client.name) }
+                    )
                 }
             }
         }
 
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "Preferimos suspender acessos a excluí-los — o histórico fica preservado.",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextSecondary
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
             text = "Perfis: CLIENT · DOMNEX_ADMIN",
             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.ExtraBold),
             color = Gold.copy(alpha = 0.7f)
         )
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun ClientListItem(
+    clientWithStats: ClientWithStats,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        color = Color.White.copy(alpha = 0.04f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = clientWithStats.client.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "${clientWithStats.totalAccesses} acessos",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                    if (clientWithStats.activeCount > 0) {
+                        Text(
+                            text = "${clientWithStats.activeCount} ativos",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SuccessGreen
+                        )
+                    }
+                    if (clientWithStats.pendingCount > 0) {
+                        Text(
+                            text = "${clientWithStats.pendingCount} pendentes",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = WarningAmber
+                        )
+                    }
+                    if (clientWithStats.suspendedCount > 0) {
+                        Text(
+                            text = "${clientWithStats.suspendedCount} suspensos",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = FailureRose
+                        )
+                    }
+                }
+            }
+            Text(
+                text = "→",
+                style = MaterialTheme.typography.titleMedium,
+                color = Gold
+            )
+        }
     }
 }

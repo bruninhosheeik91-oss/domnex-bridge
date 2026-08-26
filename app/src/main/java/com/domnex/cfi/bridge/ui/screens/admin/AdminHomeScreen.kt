@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -55,6 +58,7 @@ private data class AdminStats(
 @Composable
 fun AdminHomeScreen(
     onOpenAccesses: () -> Unit,
+    onOpenClients: () -> Unit,
     onOpenTechnicalConfig: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onOpenAccount: () -> Unit,
@@ -92,9 +96,10 @@ fun AdminHomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
+            .padding(WindowInsets.systemBars.asPaddingValues())
             .padding(horizontal = 20.dp)
     ) {
-        Spacer(Modifier.height(30.dp))
+        Spacer(Modifier.height(16.dp))
 
         Text(text = "ADMINISTRAÇÃO", style = MicroCaps, color = Gold.copy(alpha = 0.75f))
         Spacer(Modifier.height(4.dp))
@@ -167,7 +172,7 @@ fun AdminHomeScreen(
             onClick = onOpenTechnicalConfig
         )
         Spacer(Modifier.height(8.dp))
-        ShortcutRow(label = "Clientes", description = "Gestão de clientes", enabled = false, onClick = {})
+        ShortcutRow(label = "Clientes", description = "Gestão de clientes", enabled = true, onClick = onOpenClients)
         Spacer(Modifier.height(8.dp))
         ShortcutRow(label = "Bridges ativos", description = "Monitoramento por cliente", enabled = false, onClick = {})
         Spacer(Modifier.height(8.dp))
