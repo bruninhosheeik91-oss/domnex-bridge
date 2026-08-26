@@ -55,6 +55,7 @@ fun BridgeProfileRow.toUserAccount(): UserAccount {
         name = name.ifBlank { email.substringBefore("@") },
         email = email,
         role = UserRole.valueOf(role),
+        clientId = clientId,
         clientName = client?.name ?: clientId,
         status = parseStatus(status),
         createdAtMillis = createdAtMillis

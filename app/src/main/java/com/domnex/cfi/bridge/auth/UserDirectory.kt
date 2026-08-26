@@ -46,6 +46,25 @@ sealed interface PasswordResetOutcome {
 }
 
 /**
+ * Resumo REAL dos acessos vinculados a um cliente, derivado de [UserDirectory.listUsers].
+ * Alimenta o aviso pré-exclusão ("Zona de risco") — nunca usa números fictícios.
+ */
+data class ClientDeletionSummary(
+    val clientId: String?,
+    val clientName: String,
+    val totalAccesses: Int,
+    val activeUsers: Int,
+    val pendingUsers: Int,
+    val suspendedUsers: Int
+)
+
+sealed interface DeleteClientOutcome {
+    /** Cliente e todos os seus usuários foram removidos do backend real. */
+    data class Deleted(val clientName: String) : DeleteClientOutcome
+    data class Failed(val message: String) : DeleteClientOutcome
+}
+
+/**
  * Alterações administrativas sobre um acesso. Campos nulos = não alterar.
  * A validação final (papel/status/cliente) é sempre refeita no servidor.
  */
@@ -64,12 +83,20 @@ interface UserDirectory {
     fun listUsers(query: String = "", filter: AccessFilter = AccessFilter.ALL): List<UserAccount>
     fun getUser(userId: String): UserAccount?
     fun findClients(): List<ClientRef>
+
+    /**
+     * Cria um novo acesso no backend privilegiado. Quando [initialPassword] é
+     * fornecida (mínimo exigido por [AccessRules]), o usuário já nasce com
+     * login utilizável (e-mail + senha) — sem depender de convite por e-mail.
+     * A senha trafega apenas nesta chamada HTTPS; nunca é armazenada pelo app.
+     */
     fun createAccess(
         name: String,
         email: String,
         role: UserRole,
         clientName: String?,
-        status: UserStatus
+        status: UserStatus,
+        initialPassword: String? = null
     ): CreateUserOutcome
 
     fun setStatus(userId: String, status: UserStatus): StatusChangeOutcome
@@ -82,4 +109,41 @@ interface UserDirectory {
 
     /** Fluxo REAL de redefinição de senha do Supabase (nunca simulado). */
     fun sendPasswordReset(userId: String): PasswordResetOutcome
+
+    /**
+     * Exclusão DEFINITIVA de um cliente no backend real: remove os usuários de
+     * Auth vinculados (o login deles passa a falhar imediatamente) e depois o
+     * registro do cliente. Operação irreversível — exclusiva de DOMNEX_ADMIN.
+     */
+    fun deleteClient(clientId: String): DeleteClientOutcome
+}
+
+/**
+ * Deriva [ClientDeletionSummary] a partir da lista REAL de acessos. Regra pura:
+ * considera apenas perfis CLIENT; casa por [UserAccount.clientId] quando
+ * disponível e, caso contrário, pelo nome do cliente (backend DEV não popula id).
+ * Retorna null quando nenhum acesso corresponde — nada de números inventados.
+ */
+fun clientDeletionSummaryFor(
+    users: List<UserAccount>,
+    clientId: String?,
+    clientName: String?
+): ClientDeletionSummary? {
+    val targetName = clientName?.trim().orEmpty()
+    if (clientId.isNullOrBlank() && targetName.isEmpty()) return null
+    val linked = users.filter { user ->
+        user.role == UserRole.CLIENT && when {
+            !user.clientId.isNullOrBlank() && !clientId.isNullOrBlank() -> user.clientId == clientId
+            else -> user.clientName?.trim() == targetName && targetName.isNotEmpty()
+        }
+    }
+    if (linked.isEmpty()) return null
+    return ClientDeletionSummary(
+        clientId = clientId,
+        clientName = targetName.ifEmpty { linked.firstNotNullOfOrNull { it.clientName }.orEmpty() },
+        totalAccesses = linked.size,
+        activeUsers = linked.count { it.status == UserStatus.ACTIVE },
+        pendingUsers = linked.count { it.status == UserStatus.PENDING },
+        suspendedUsers = linked.count { it.status == UserStatus.SUSPENDED }
+    )
 }

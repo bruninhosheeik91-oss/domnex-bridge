@@ -98,7 +98,8 @@ class RemoteUserDirectory(
         email: String,
         role: UserRole,
         clientName: String?,
-        status: UserStatus
+        status: UserStatus,
+        initialPassword: String?
     ): CreateUserOutcome {
         if (!config.isConfigured()) {
             return CreateUserOutcome.Failed("Backend Supabase não configurado neste build.")
@@ -108,7 +109,14 @@ class RemoteUserDirectory(
 
         val body = json.encodeToString(
             CreateAccessRequest.serializer(),
-            CreateAccessRequest(name.trim(), email.trim().lowercase(), role.name, clientName?.trim(), status.name)
+            CreateAccessRequest(
+                name.trim(),
+                email.trim().lowercase(),
+                role.name,
+                clientName?.trim()?.takeIf { it.isNotEmpty() },
+                status.name,
+                initialPassword?.takeIf { it.isNotEmpty() }
+            )
         ).toByteArray(Charsets.UTF_8)
 
         val response = try {
@@ -144,6 +152,58 @@ class RemoteUserDirectory(
             else -> CreateUserOutcome.Failed(
                 parsed?.detail ?: parsed?.error ?: "Backend recusou a criação (HTTP ${response.statusCode})."
             )
+        }
+    }
+
+    override fun deleteClient(clientId: String): DeleteClientOutcome {
+        if (!config.isConfigured()) {
+            return DeleteClientOutcome.Failed("Backend Supabase não configurado neste build.")
+        }
+        val token = accessTokenProvider()
+            ?: return DeleteClientOutcome.Failed("Sessão administrativa expirada. Entre novamente.")
+
+        val body = buildJsonObject { put("client_id", clientId) }
+
+        val response = try {
+            httpClient.execute(
+                HttpRequest(
+                    url = config.functionsUrl(ADMIN_DELETE_CLIENT_FUNCTION),
+                    method = "POST",
+                    headers = baseHeaders(token),
+                    body = json.encodeToString(JsonObject.serializer(), body)
+                        .toByteArray(Charsets.UTF_8)
+                )
+            )
+        } catch (_: java.io.IOException) {
+            return DeleteClientOutcome.Failed("Falha de rede ao contatar o backend.")
+        }
+
+        val parsed = runCatching {
+            json.decodeFromString(ClientDeleteResponse.serializer(), response.bodyText())
+        }.getOrNull()
+
+        return when {
+            // 207 Multi-Status = exclusão PARCIAL/abortada: NUNCA é sucesso.
+            response.statusCode == 207 ->
+                DeleteClientOutcome.Failed(
+                    parsed?.detail
+                        ?: "Exclusão incompleta: o cliente NÃO foi removido. Tente novamente."
+                )
+            response.statusCode in 200..299 ->
+                DeleteClientOutcome.Deleted(parsed?.clientName.orEmpty().ifEmpty { "Cliente" })
+            response.statusCode == 404 -> DeleteClientOutcome.Failed("Cliente não encontrado.")
+            else -> when (parsed?.error) {
+                "SELF_DELETE_FORBIDDEN", "FORBIDDEN", "UNAUTHENTICATED" -> DeleteClientOutcome.Failed(
+                    parsed?.detail ?: "Somente um administrador Domnex ativo pode excluir clientes."
+                )
+                "ADMIN_LINKED_PROTECTED" -> DeleteClientOutcome.Failed(
+                    parsed?.detail ?: "Existem acessos administrativos vinculados a este cliente."
+                )
+                else -> DeleteClientOutcome.Failed(
+                    parsed?.detail ?: parsed?.error
+                        ?: "Backend recusou a exclusão do cliente (HTTP ${response.statusCode})."
+                )
+            }
         }
     }
 
@@ -353,6 +413,7 @@ class RemoteUserDirectory(
     companion object {
         const val ADMIN_CREATE_ACCESS_FUNCTION = "admin-create-access"
         const val ADMIN_UPDATE_EMAIL_FUNCTION = "admin-update-email"
+        const val ADMIN_DELETE_CLIENT_FUNCTION = "admin-delete-client"
     }
 }
 
@@ -362,7 +423,18 @@ private data class CreateAccessRequest(
     val email: String,
     val role: String,
     @kotlinx.serialization.SerialName("client_name") val clientName: String?,
-    val status: String
+    val status: String,
+    val password: String? = null
+)
+
+@Serializable
+private data class ClientDeleteResponse(
+    @kotlinx.serialization.SerialName("client_id") val clientId: String? = null,
+    @kotlinx.serialization.SerialName("client_name") val clientName: String? = null,
+    @kotlinx.serialization.SerialName("deleted_users") val deletedUsers: Int? = null,
+    @kotlinx.serialization.SerialName("remaining_users") val remainingUsers: Int? = null,
+    val error: String? = null,
+    val detail: String? = null
 )
 
 @Serializable

@@ -55,6 +55,7 @@ import com.domnex.cfi.bridge.ui.theme.TextSecondary
 @Composable
 fun HomeScreen(
     onOpenActivity: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     onOpenAccount: () -> Unit = {}
 ) {
     val isRunning by TonAccessibilityService.isRunning.collectAsState()
@@ -124,9 +125,10 @@ fun HomeScreen(
 
             Spacer(Modifier.height(24.dp))
             Row(
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
             ) {
                 NavPill(label = "Atividade", onClick = onOpenActivity, modifier = Modifier.weight(1f))
+                NavPill(label = "Diagnóstico", onClick = onOpenDiagnostics, modifier = Modifier.weight(1f))
                 NavPill(label = "Conta", onClick = onOpenAccount, modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.height(32.dp))
@@ -198,15 +200,16 @@ private fun NavPill(
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BridgeStatusDot(color = Gold, size = 6.dp, glowRadius = 3.dp)
-            Spacer(Modifier.size(8.dp))
+            Spacer(Modifier.size(6.dp))
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
             )
         }
     }

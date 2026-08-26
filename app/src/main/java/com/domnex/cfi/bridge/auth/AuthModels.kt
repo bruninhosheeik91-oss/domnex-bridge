@@ -18,6 +18,7 @@ data class UserAccount(
     val name: String,
     val email: String,
     val role: UserRole,
+    val clientId: String? = null,
     val clientName: String? = null,
     val status: UserStatus = UserStatus.ACTIVE,
     val createdAtMillis: Long = System.currentTimeMillis()

@@ -9,6 +9,8 @@ import java.util.UUID
  *  - Nunca é usado quando o Supabase está configurado (AuthProvider garante isso).
  *  - NÃO simula operações que exigem backend privilegiado real: redefinição de
  *    senha e troca de e-mail falham explicitamente, sem fingir sucesso.
+ *  - createAccess/deleteClient operam APENAS sobre o armazenamento local DEV
+ *    (sem Supabase Auth não existem contas reais para criar/remover).
  */
 object LocalUserDirectory : UserDirectory {
 
@@ -62,7 +64,7 @@ object LocalUserDirectory : UserDirectory {
         )
     )
 
-    private val demoClients = listOf(
+    private val demoClients = mutableListOf(
         ClientRef(id = "c-padaria-estrela", name = "Padaria Estrela"),
         ClientRef(id = "c-mercado-central", name = "Mercado Central"),
         ClientRef(id = "c-farmacia-vida", name = "Farmácia Vida")
@@ -98,12 +100,15 @@ object LocalUserDirectory : UserDirectory {
         email: String,
         role: UserRole,
         clientName: String?,
-        status: UserStatus
+        status: UserStatus,
+        initialPassword: String?
     ): CreateUserOutcome {
         val normalizedEmail = email.trim().lowercase()
         if (users.any { it.email.lowercase() == normalizedEmail }) {
             return CreateUserOutcome.EmailInUse
         }
+        // Sem Supabase Auth não há onde guardar senha real: o parâmetro é
+        // aceito (mesma interface do backend remoto) e ignorado no DEV.
         val user = UserAccount(
             id = "u-${UUID.randomUUID().toString().take(8)}",
             name = name.trim(),
@@ -115,6 +120,14 @@ object LocalUserDirectory : UserDirectory {
         )
         users.add(user)
         return CreateUserOutcome.Created(user)
+    }
+
+    override fun deleteClient(clientId: String): DeleteClientOutcome {
+        val client = demoClients.firstOrNull { it.id == clientId }
+            ?: return DeleteClientOutcome.Failed("Cliente não encontrado.")
+        users.removeAll { it.role == UserRole.CLIENT && it.clientName == client.name }
+        demoClients.remove(client)
+        return DeleteClientOutcome.Deleted(client.name)
     }
 
     override fun setStatus(userId: String, status: UserStatus): StatusChangeOutcome {
@@ -177,5 +190,13 @@ object LocalUserDirectory : UserDirectory {
     fun resetForTests() {
         users.clear()
         users.addAll(defaultUsers())
+        demoClients.clear()
+        demoClients.addAll(
+            listOf(
+                ClientRef(id = "c-padaria-estrela", name = "Padaria Estrela"),
+                ClientRef(id = "c-mercado-central", name = "Mercado Central"),
+                ClientRef(id = "c-farmacia-vida", name = "Farmácia Vida")
+            )
+        )
     }
 }

@@ -15,30 +15,32 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.domnex.cfi.bridge.BuildConfig
+import com.domnex.cfi.bridge.auth.AccountPresentation
 import com.domnex.cfi.bridge.auth.AuthProvider
-import com.domnex.cfi.bridge.auth.UserRole
+import com.domnex.cfi.bridge.auth.UserStatus
 import com.domnex.cfi.bridge.provisioning.BridgeProvisioning
 import com.domnex.cfi.bridge.ui.components.BridgeCard
+import com.domnex.cfi.bridge.ui.components.BridgeStatusDot
 import com.domnex.cfi.bridge.ui.components.IntegrationStatusCard
 import com.domnex.cfi.bridge.ui.theme.FailureRose
 import com.domnex.cfi.bridge.ui.theme.Gold
 import com.domnex.cfi.bridge.ui.theme.MicroCaps
+import com.domnex.cfi.bridge.ui.theme.SuccessGreen
 import com.domnex.cfi.bridge.ui.theme.TextMuted
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
+import com.domnex.cfi.bridge.ui.theme.WarningAmber
 
 /**
- * Conta do CLIENT: dados do perfil e status da integração.
- * Nunca exibe endpoint, token ou qualquer parâmetro técnico.
+ * Conta: dados reais da sessão (Supabase) e status da integração.
+ * Nunca exibe senha, tokens, endpoint ou qualquer parâmetro técnico.
  */
 @Composable
 fun AccountScreen(
@@ -97,27 +99,44 @@ fun AccountScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = account?.name ?: "Usuário",
+                    text = account?.name?.trim()?.ifEmpty { null } ?: "Usuário",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = account?.email ?: "",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
-                )
+                val email = account?.email?.trim().orEmpty()
+                if (email.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = email,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = if (account?.role == UserRole.DOMNEX_ADMIN) {
-                        "Administrador Domnex"
-                    } else {
-                        "Cliente"
-                    },
+                    text = AccountPresentation.roleLabel(account?.role),
                     style = MaterialTheme.typography.bodySmall,
                     color = Gold,
                     fontWeight = FontWeight.Bold
                 )
+
+                // Cliente/organização vinculada — somente quando existe de fato.
+                val linkedClient = AccountPresentation.linkedClientLabel(account)
+                if (linkedClient != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Cliente vinculado: $linkedClient",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                }
+
+                // Status real da conta quando disponível na sessão.
+                val statusLabel = AccountPresentation.statusLabel(account?.status)
+                if (statusLabel != null && account != null) {
+                    Spacer(Modifier.height(10.dp))
+                    StatusLine(statusLabel, account.status)
+                }
             }
         }
 
@@ -133,6 +152,69 @@ fun AccountScreen(
                 fontWeight = FontWeight.ExtraBold
             )
         }
+
+        Spacer(Modifier.height(18.dp))
+        AboutCard()
         Spacer(Modifier.height(30.dp))
+    }
+}
+
+@Composable
+private fun StatusLine(label: String, status: UserStatus?) {
+    val accent = when (status) {
+        UserStatus.ACTIVE -> SuccessGreen
+        UserStatus.PENDING -> WarningAmber
+        else -> FailureRose
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        BridgeStatusDot(color = accent, size = 7.dp, glowRadius = 4.dp)
+        Spacer(Modifier.padding(end = 6.dp))
+        Text(
+            text = "Status da conta: $label",
+            style = MaterialTheme.typography.bodySmall,
+            color = accent,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+/**
+ * Sobre o Domnex Bridge — dados reais do BuildConfig (sem hardcode duplicado).
+ */
+@Composable
+private fun AboutCard() {
+    BridgeCard(modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(16.dp)) {
+        Text(
+            text = "SOBRE O DOMNEX BRIDGE",
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.4.sp),
+            color = TextMuted,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+        AboutRow("Versão", BuildConfig.VERSION_NAME)
+        AboutRow("Build", BuildConfig.VERSION_CODE.toString())
+        AboutRow("Desenvolvido por", "Domnex Tech")
+    }
+}
+
+@Composable
+private fun AboutRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }

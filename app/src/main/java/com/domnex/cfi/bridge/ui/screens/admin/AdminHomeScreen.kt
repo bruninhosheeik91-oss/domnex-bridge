@@ -58,6 +58,8 @@ private data class AdminStats(
 fun AdminHomeScreen(
     onOpenAccesses: () -> Unit,
     onOpenTechnicalConfig: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+    onOpenAccount: () -> Unit,
     onLogout: () -> Unit,
     dataVersion: Int = 0,
     modifier: Modifier = Modifier
@@ -177,7 +179,19 @@ fun AdminHomeScreen(
         Spacer(Modifier.height(8.dp))
         ShortcutRow(label = "Bridges ativos", description = "Monitoramento por cliente", enabled = false, onClick = {})
         Spacer(Modifier.height(8.dp))
-        ShortcutRow(label = "Diagnóstico", description = "Ferramentas de suporte", enabled = false, onClick = {})
+        ShortcutRow(
+            label = "Diagnóstico",
+            description = "Estado real do Bridge neste dispositivo",
+            enabled = true,
+            onClick = onOpenDiagnostics
+        )
+        Spacer(Modifier.height(8.dp))
+        ShortcutRow(
+            label = "Conta",
+            description = "Dados da conta e configurações",
+            enabled = true,
+            onClick = onOpenAccount
+        )
 
         Spacer(Modifier.height(22.dp))
         BridgeCard(modifier = Modifier.fillMaxWidth()) {

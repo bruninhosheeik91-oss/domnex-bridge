@@ -33,7 +33,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.domnex.cfi.bridge.auth.AccessRules
 import com.domnex.cfi.bridge.auth.AuthProvider
 import com.domnex.cfi.bridge.auth.CreateUserOutcome
 import com.domnex.cfi.bridge.auth.UserRole
@@ -59,6 +62,11 @@ fun CreateAccessScreen(
 ) {
     var name by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
+    // Senhas NÃO usam rememberSaveable: nunca devem sobreviver à recriação do processo.
+    var initialPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var showInitialPassword by remember { mutableStateOf(false) }
+    var showConfirmPassword by remember { mutableStateOf(false) }
     var roleIsAdmin by rememberSaveable { mutableStateOf(false) }
     var selectedClient by rememberSaveable { mutableStateOf<String?>(null) }
     var customClient by rememberSaveable { mutableStateOf("") }
@@ -99,6 +107,12 @@ fun CreateAccessScreen(
             errorMessage = "Vincule um cliente ao perfil CLIENT."
             return
         }
+        val passwordForBackend =
+            AccessRules.initialPasswordPairIssue(initialPassword, confirmPassword)?.let {
+                errorMessage = it
+                return
+            }
+            ?: initialPassword.takeIf { it.isNotEmpty() }
         if (roleIsAdmin && !confirmedAdmin) {
             showAdminConfirm = true
             return
@@ -113,12 +127,19 @@ fun CreateAccessScreen(
                     email = normalizedEmail,
                     role = if (roleIsAdmin) UserRole.DOMNEX_ADMIN else UserRole.CLIENT,
                     clientName = effectiveClientName(),
-                    status = initialStatus
+                    status = initialStatus,
+                    initialPassword = passwordForBackend
                 )
             }
             creating = false
             when (outcome) {
-                is CreateUserOutcome.Created -> onCreated()
+                is CreateUserOutcome.Created -> {
+                    initialPassword = ""
+                    confirmPassword = ""
+                    showInitialPassword = false
+                    showConfirmPassword = false
+                    onCreated()
+                }
                 CreateUserOutcome.EmailInUse -> {
                     errorMessage = "Já existe um acesso com este e-mail."
                 }
@@ -178,6 +199,61 @@ fun CreateAccessScreen(
                     placeholder = "E-mail",
                     keyboardType = KeyboardType.Email,
                     modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        BridgeCard(modifier = Modifier.fillMaxWidth()) {
+            Column {
+                SectionCaption("ACESSO INICIAL")
+                Spacer(Modifier.height(10.dp))
+                BridgeTextField(
+                    value = initialPassword,
+                    onValueChange = { initialPassword = it; errorMessage = null },
+                    placeholder = "Senha inicial (mínimo 8 caracteres)",
+                    keyboardType = KeyboardType.Password,
+                    visualTransformation = if (showInitialPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailing = {
+                        TextButton(onClick = { showInitialPassword = !showInitialPassword }) {
+                            Text(
+                                text = if (showInitialPassword) "OCULTAR" else "MOSTRAR",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Gold,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(12.dp))
+                BridgeTextField(
+                    value = confirmPassword,
+                    onValueChange = { confirmPassword = it; errorMessage = null },
+                    placeholder = "Confirmar senha",
+                    keyboardType = KeyboardType.Password,
+                    visualTransformation = if (showConfirmPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailing = {
+                        TextButton(onClick = { showConfirmPassword = !showConfirmPassword }) {
+                            Text(
+                                text = if (showConfirmPassword) "OCULTAR" else "MOSTRAR",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Gold,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = if (initialPassword.isBlank() && confirmPassword.isBlank()) {
+                        "Opcional. Sem senha inicial, o acesso depende de convite por e-mail para definir a própria senha."
+                    } else {
+                        "O acesso já será criado com esta senha — login imediato com e-mail e senha, sem convite."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
                 )
             }
         }
@@ -265,10 +341,12 @@ fun CreateAccessScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = if (remoteBackend) {
-                        "O acesso é criado no Supabase Auth sem senha. O usuário recebe um convite por e-mail para definir a própria senha."
+                    text = if (initialPassword.isNotBlank()) {
+                        "Com senha inicial definida acima, o status Ativo libera o login imediatamente."
+                    } else if (remoteBackend) {
+                        "Sem senha inicial, o acesso é criado no Supabase Auth sem senha e depende do convite por e-mail (requer SMTP configurado no projeto)."
                     } else {
-                        "O acesso é criado sem senha. O usuário recebe um convite para definir a própria senha — fluxo simulado nesta versão DEV."
+                        "O acesso é criado sem senha. O usuário receberia um convite para definir a própria senha — fluxo simulado nesta versão DEV."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted
