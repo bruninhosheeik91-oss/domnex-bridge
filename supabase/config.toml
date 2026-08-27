@@ -1,0 +1,16 @@
+# Minimal Supabase config for DOMNEX BRIDGE deploy.
+# O restante da configuração é gerenciado no projeto hospedado (via
+# `supabase link` / dashboard). Este arquivo existe para fixar flags de
+# deploy das Edge Functions, como `verify_jwt`.
+
+# Projeto Supabase vinculado (ver supabase/.temp/linked-project.json).
+project_id = "bknttvuiqsrkftodcsku"
+
+# ---------------------------------------------------------------------------
+# Edge Functions: DOMNEX BRIDGE
+# ---------------------------------------------------------------------------
+
+# bridge-monitoring-proxy: valida JWT do Supabase DOMNEX BRIDGE e faz proxy
+# server-to-server para o monitoramento do CFI. Exige JWT válido (verify_jwt).
+[functions.bridge-monitoring-proxy]
+verify_jwt = true

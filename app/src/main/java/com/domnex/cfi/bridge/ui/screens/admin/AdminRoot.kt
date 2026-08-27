@@ -13,6 +13,7 @@ import com.domnex.cfi.bridge.ui.screens.TechnicalConfigScreen
 
 private enum class AdminRoute {
     HOME,
+    BRIDGE_MONITORING,
     CLIENTS,
     CLIENT_DETAIL,
     ACCESSES,
@@ -39,11 +40,17 @@ fun AdminRoot(
         AdminRoute.HOME -> AdminHomeScreen(
             onOpenAccesses = { route = AdminRoute.ACCESSES },
             onOpenClients = { route = AdminRoute.CLIENTS },
+            onOpenBridgeMonitoring = { route = AdminRoute.BRIDGE_MONITORING },
             onOpenTechnicalConfig = { route = AdminRoute.TECHNICAL_CONFIG },
             onOpenDiagnostics = { route = AdminRoute.DIAGNOSTICS },
             onOpenAccount = { route = AdminRoute.ACCOUNT },
             onLogout = onLogout,
             dataVersion = dataVersion,
+            modifier = modifier
+        )
+
+        AdminRoute.BRIDGE_MONITORING -> BridgeMonitoringScreen(
+            onBack = { route = AdminRoute.HOME },
             modifier = modifier
         )
 

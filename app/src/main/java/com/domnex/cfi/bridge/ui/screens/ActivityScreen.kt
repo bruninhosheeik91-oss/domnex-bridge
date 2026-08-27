@@ -71,7 +71,9 @@ fun ActivityScreen(
     val filtered = remember(allSales, filters) {
         repository.applyFilters(allSales, filters, nowMillis)
     }
-    val summary = remember(allSales) { repository.todaySummary(allSales, nowMillis) }
+    val summary = remember(allSales, filters) {
+        repository.periodSummary(allSales, filters.period, nowMillis)
+    }
 
     val selectedId = selectedSaleId
     if (selectedId != null) {
@@ -108,7 +110,7 @@ fun ActivityScreen(
         )
 
         Spacer(Modifier.height(18.dp))
-        SummaryCard(summary)
+        SummaryCard(summary = summary, period = filters.period)
 
         Spacer(Modifier.height(14.dp))
         FiltersCard(
@@ -133,10 +135,15 @@ fun ActivityScreen(
 }
 
 @Composable
-private fun SummaryCard(summary: TodaySummary) {
+private fun SummaryCard(summary: TodaySummary, period: PeriodFilter) {
+    val label = when (period) {
+        PeriodFilter.TODAY -> "HOJE"
+        PeriodFilter.DAYS_7 -> "7 DIAS"
+        PeriodFilter.DAYS_30 -> "30 DIAS"
+    }
     BridgeCard(modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(18.dp)) {
         Text(
-            text = "HOJE",
+            text = label,
             style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.4.sp),
             color = TextMuted,
             fontWeight = FontWeight.Bold

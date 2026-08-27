@@ -20,6 +20,32 @@ fun bridgeSecret(name: String): String = sequenceOf(
     System.getenv(name)
 ).map { it?.trim()?.takeIf { value -> value.isNotEmpty() } }.firstOrNull { it != null } ?: ""
 
+fun signingProp(name: String): String? = sequenceOf(
+    bridgeSecrets.getProperty(name),
+    System.getenv(name)
+).map { it?.trim()?.takeIf { v -> v.isNotEmpty() } }.firstOrNull { it != null }
+
+val domnexKeystorePath = signingProp("DOMNEX_KEYSTORE_PATH")
+val domnexKeystorePassword = signingProp("DOMNEX_KEYSTORE_PASSWORD")
+val domnexKeyAlias = signingProp("DOMNEX_KEY_ALIAS")
+val domnexKeyPassword = signingProp("DOMNEX_KEY_PASSWORD")
+
+val signingReady = listOfNotNull(
+    domnexKeystorePath, domnexKeystorePassword, domnexKeyAlias, domnexKeyPassword
+).size == 4
+
+if (!signingReady) {
+    logger.warn(
+        "⚠ DOMNEX BRIDGE: signingConfigs.release não configurado.\n" +
+            "Adicione as 4 propriedades em local.properties (gitignored) ou variáveis de ambiente:\n" +
+            "  DOMNEX_KEYSTORE_PATH\n" +
+            "  DOMNEX_KEYSTORE_PASSWORD\n" +
+            "  DOMNEX_KEY_ALIAS\n" +
+            "  DOMNEX_KEY_PASSWORD\n" +
+            "O build release vai falhar até que todas estejam presentes."
+    )
+}
+
 android {
     namespace = "com.domnex.cfi.bridge"
     compileSdk {
@@ -41,10 +67,26 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${bridgeSecret("SUPABASE_ANON_KEY")}\"")
     }
 
+    if (signingReady) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(domnexKeystorePath!!)
+                storePassword = domnexKeystorePassword
+                keyAlias = domnexKeyAlias
+                keyPassword = domnexKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            optimization {
-                enable = false
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (signingReady) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                // Sem assinatura configurada: forçar falha clara no build.
+                signingConfig = null
             }
         }
     }
@@ -60,6 +102,22 @@ android {
         unitTests {
             // Logs de diagnóstico usam android.util.Log; nos testes JVM vira no-op.
             isReturnDefaultValues = true
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.startsWith("assemble") && name.contains("Release", ignoreCase = true) && !signingReady) {
+        doFirst {
+            throw GradleException(
+                "DOMNEX BRIDGE: Build release bloqueado — signingConfigs.release não configurado.\n\n" +
+                    "Adicione as seguintes propriedades em local.properties (ou variáveis de ambiente):\n" +
+                    "  DOMNEX_KEYSTORE_PATH=/caminho/para/domnex-bridge.jks\n" +
+                    "  DOMNEX_KEYSTORE_PASSWORD=<senha>\n" +
+                    "  DOMNEX_KEY_ALIAS=<alias>\n" +
+                    "  DOMNEX_KEY_PASSWORD=<senha>\n\n" +
+                    "Arquivo local.properties é gitignored e nunca versionado."
+            )
         }
     }
 }

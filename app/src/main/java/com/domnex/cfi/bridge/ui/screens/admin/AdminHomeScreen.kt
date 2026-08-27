@@ -59,6 +59,7 @@ private data class AdminStats(
 fun AdminHomeScreen(
     onOpenAccesses: () -> Unit,
     onOpenClients: () -> Unit,
+    onOpenBridgeMonitoring: () -> Unit,
     onOpenTechnicalConfig: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onOpenAccount: () -> Unit,
@@ -159,6 +160,13 @@ fun AdminHomeScreen(
         Spacer(Modifier.height(10.dp))
 
         ShortcutRow(
+            label = "Monitoramento de Bridges",
+            description = "Bridges conectados ao CFI · somente admin",
+            enabled = true,
+            onClick = onOpenBridgeMonitoring
+        )
+        Spacer(Modifier.height(8.dp))
+        ShortcutRow(
             label = "Acessos · Usuários",
             description = "Criar, filtrar e gerenciar acessos",
             enabled = true,
@@ -173,8 +181,6 @@ fun AdminHomeScreen(
         )
         Spacer(Modifier.height(8.dp))
         ShortcutRow(label = "Clientes", description = "Gestão de clientes", enabled = true, onClick = onOpenClients)
-        Spacer(Modifier.height(8.dp))
-        ShortcutRow(label = "Bridges ativos", description = "Monitoramento por cliente", enabled = false, onClick = {})
         Spacer(Modifier.height(8.dp))
         ShortcutRow(
             label = "Diagnóstico",

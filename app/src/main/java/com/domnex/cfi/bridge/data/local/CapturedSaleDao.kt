@@ -25,4 +25,8 @@ interface CapturedSaleDao {
     /** Retorna -1 em conflito de índice único (OnConflictStrategy.IGNORE). */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(entity: CapturedSaleEntity): Long
+
+    /** Apaga TODAS as vendas do histórico Room local. Não toca em configuração. */
+    @Query("DELETE FROM captured_sales")
+    suspend fun clearAll(): Int
 }

@@ -8,6 +8,7 @@ import com.domnex.cfi.bridge.data.SaleHistoryRepository
 import com.domnex.cfi.bridge.data.local.CapturedSaleDao
 import com.domnex.cfi.bridge.data.local.CapturedSaleEntity
 import com.domnex.cfi.bridge.model.SaleData
+import com.domnex.cfi.bridge.service.TonAccessibilityService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -51,6 +52,13 @@ class SaleHistoryTest {
             rows.add(entity.copy(id = id))
             publish()
             return id
+        }
+
+        override suspend fun clearAll(): Int {
+            val count = rows.size
+            rows.clear()
+            publish()
+            return count
         }
 
         /** Simula o armazenamento persistente sobrevivendo a um "reinício". */
@@ -361,6 +369,112 @@ class SaleHistoryTest {
         assertEquals(listOf("T-HOJE"), period(PeriodFilter.TODAY))
         assertEquals(listOf("T-HOJE", "T-5D"), period(PeriodFilter.DAYS_7))
         assertEquals(listOf("T-HOJE", "T-5D", "T-20D"), period(PeriodFilter.DAYS_30))
+    }
+
+    // ── Ajuste final 1.0: filtro Hoje (data local) ────────────
+
+    @Test
+    fun `hoje exclui vendas de dias anteriores`() {
+        val startToday = SaleHistoryLogic.startOfDayMillis(NOW)
+        val day = 24L * 60L * 60L * 1000L
+        val sales = listOf(
+            entity(codigoTransacao = "ONTEM", capturadoEm = startToday - 1),
+            entity(codigoTransacao = "ONTEM-2", capturadoEm = startToday - 10_000L)
+        )
+        val result = SaleHistoryLogic.filter(
+            sales, HistoryFilters(period = PeriodFilter.TODAY), nowMillis = NOW
+        )
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun `hoje inclui venda do dia atual e resume total`() {
+        val startToday = SaleHistoryLogic.startOfDayMillis(NOW)
+        val sales = listOf(
+            entity(valorVenda = "R$ 100,00", codigoTransacao = "HOJE-A", capturadoEm = startToday + 1),
+            entity(valorVenda = "R$ 50,00", codigoTransacao = "HOJE-B", capturadoEm = startToday + 2)
+        )
+        val result = SaleHistoryLogic.filter(
+            sales, HistoryFilters(period = PeriodFilter.TODAY), nowMillis = NOW
+        )
+        assertEquals(listOf("HOJE-A", "HOJE-B"), result.map { it.codigoTransacao }.sorted())
+
+        val summary = SaleHistoryLogic.periodSummary(sales, PeriodFilter.TODAY, NOW)
+        assertEquals(2, summary.count)
+        assertEquals(15000L, summary.totalCentavos)
+    }
+
+    @Test
+    fun `resumo financeiro respeita o periodo selecionado`() {
+        val startToday = SaleHistoryLogic.startOfDayMillis(NOW)
+        val day = 24L * 60L * 60L * 1000L
+        val sales = listOf(
+            entity(valorVenda = "R$ 100,00", codigoTransacao = "HOJE", capturadoEm = startToday + 1),
+            entity(valorVenda = "R$ 200,00", codigoTransacao = "5D", capturadoEm = startToday - 5 * day),
+            entity(valorVenda = "R$ 300,00", codigoTransacao = "20D", capturadoEm = startToday - 20 * day),
+            entity(valorVenda = "R$ 999,00", codigoTransacao = "40D", capturadoEm = startToday - 40 * day)
+        )
+
+        val today = SaleHistoryLogic.periodSummary(sales, PeriodFilter.TODAY, NOW)
+        assertEquals(1, today.count)
+        assertEquals(10000L, today.totalCentavos)
+
+        val seven = SaleHistoryLogic.periodSummary(sales, PeriodFilter.DAYS_7, NOW)
+        assertEquals(2, seven.count)
+        assertEquals(30000L, seven.totalCentavos)
+
+        val thirty = SaleHistoryLogic.periodSummary(sales, PeriodFilter.DAYS_30, NOW)
+        assertEquals(3, thirty.count)
+        assertEquals(60000L, thirty.totalCentavos)
+    }
+
+    // ── Ajuste final 1.0: limpar histórico local ─────────────
+
+    @Test
+    fun `limpar historico esvazia somente as vendas locais`() = runTest {
+        val dao = InMemoryCapturedSaleDao()
+        val repo = repository(dao)
+
+        repo.record(sale(codigoTransacao = "TX-A"))
+        repo.record(sale(codigoTransacao = "TX-B"))
+        assertEquals(2, dao.observeAll().first().size)
+
+        val removed = repo.clearAll()
+        assertEquals(2, removed)
+        assertTrue(repo.observeAll().first().isEmpty())
+        assertTrue(
+            SaleHistoryLogic.filter(emptyList(), HistoryFilters(period = PeriodFilter.TODAY), nowMillis = NOW)
+                .isEmpty()
+        )
+    }
+
+    @Test
+    fun `limpar historico nao apaga a configuracao tecnica`() = runTest {
+        val config = mutableMapOf(
+            "api_base_url" to "https://exemplo.cfi",
+            "bridge_token" to "token-seguro",
+            "target_system_name" to "CFI"
+        )
+
+        val dao = InMemoryCapturedSaleDao()
+        val repo = repository(dao)
+        repo.record(sale(codigoTransacao = "TX-CONF"))
+
+        repo.clearAll()
+
+        // A limpeza opera apenas sobre o histórico Room; a configuração
+        // (endpoint/token/nome do sistema, em SharedPreferences) permanece.
+        assertEquals("https://exemplo.cfi", config["api_base_url"])
+        assertEquals("token-seguro", config["bridge_token"])
+        assertEquals("CFI", config["target_system_name"])
+    }
+
+    // ── Ajuste final 1.0: refresh forçado da TON ──────────────
+
+    @Test
+    fun `refresh forcado minimo de 20 minutos`() {
+        assertEquals(1_200_000L, TonAccessibilityService.FORCED_REFRESH_INTERVAL_MS)
+        assertTrue(TonAccessibilityService.FORCED_REFRESH_INTERVAL_MS >= 1_200_000L)
     }
 
     private companion object {

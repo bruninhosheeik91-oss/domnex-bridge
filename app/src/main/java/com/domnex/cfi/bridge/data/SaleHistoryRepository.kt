@@ -30,6 +30,13 @@ class SaleHistoryRepository(
     suspend fun findById(id: Long): CapturedSaleEntity? = dao.findById(id)
 
     /**
+     * Limpa SOMENTE o histórico deste dispositivo (tabela Room). Configuração
+     * (endpoint, token, sessão, deduplicação) permanece intacta. A UI reage
+     * imediatamente via [observeAll].
+     */
+    suspend fun clearAll(): Int = dao.clearAll()
+
+    /**
      * Persiste uma venda publicada/concluída pelo fluxo atual.
      * Retorna false quando é duplicata (mesmo txCode ou mesmo fingerprint).
      * Falhas nunca propagam para o motor (chamador usa runCatching).
@@ -68,6 +75,13 @@ class SaleHistoryRepository(
         sales: List<CapturedSaleEntity>,
         nowMillis: Long = this.nowMillis()
     ): TodaySummary = SaleHistoryLogic.todaySummary(sales, nowMillis)
+
+    /** Resumo financeiro respeitando o período selecionado (Hoje / 7 / 30 dias). */
+    fun periodSummary(
+        sales: List<CapturedSaleEntity>,
+        period: PeriodFilter,
+        nowMillis: Long = this.nowMillis()
+    ): TodaySummary = SaleHistoryLogic.periodSummary(sales, period, nowMillis)
 }
 
 /**
@@ -99,6 +113,13 @@ object SaleHistory {
     fun recordAsync(context: Context, sale: SaleData) {
         scope.launch {
             runCatching { get(context).record(sale) }
+        }
+    }
+
+    /** Limpa o histórico local (Room) de forma assíncrona; nunca afeta config. */
+    fun clearAsync(context: Context) {
+        scope.launch {
+            runCatching { get(context).clearAll() }
         }
     }
 }

@@ -137,8 +137,14 @@ object SaleHistoryLogic {
 
     // ── Período ───────────────────────────────────────────────
 
+    /**
+     * Início do dia CALENDÁRIO local do dispositivo (00:00:00.000). É a
+     * fronteira exata usada pelo filtro "Hoje" — vendas de dias anteriores
+     * ficam abaixo dela e NUNCA entram no período "Hoje".
+     */
     fun startOfDayMillis(nowMillis: Long): Long {
         val calendar = Calendar.getInstance()
+        calendar.clear()
         calendar.timeInMillis = nowMillis
         calendar.set(Calendar.HOUR_OF_DAY, 0)
         calendar.set(Calendar.MINUTE, 0)
@@ -177,19 +183,32 @@ object SaleHistoryLogic {
         }
     }
 
-    // ── Resumo de hoje (apenas métricas reais) ────────────────
+    // ── Resumo (apenas métricas reais) ────────────────────────
 
-    fun todaySummary(sales: List<CapturedSaleEntity>, nowMillis: Long): TodaySummary {
-        val start = startOfDayMillis(nowMillis)
-        val today = sales.filter { it.capturadoEm >= start }
-        val parsedValues = today.mapNotNull { it.valorCentavos }
-        val allParsed = parsedValues.size == today.size
+    /**
+     * Resumo financeiro para um período. Usa EXATAMENTE a mesma fronteira do
+     * filtro ([periodCutoff]), garantindo que contagem e valor total correspondam
+     * ao período selecionado (Hoje / 7 dias / 30 dias).
+     */
+    fun periodSummary(
+        sales: List<CapturedSaleEntity>,
+        period: PeriodFilter,
+        nowMillis: Long
+    ): TodaySummary {
+        val cutoff = periodCutoff(period, nowMillis)
+        val inPeriod = sales.filter { it.capturadoEm >= cutoff }
+        val parsedValues = inPeriod.mapNotNull { it.valorCentavos }
+        val allParsed = parsedValues.size == inPeriod.size
         return TodaySummary(
-            count = today.size,
+            count = inPeriod.size,
             totalCentavos = if (allParsed) parsedValues.sum() else null,
             allValuesParsed = allParsed
         )
     }
+
+    /** Resumo de hoje (apenas métricas reais). */
+    fun todaySummary(sales: List<CapturedSaleEntity>, nowMillis: Long): TodaySummary =
+        periodSummary(sales, PeriodFilter.TODAY, nowMillis)
 
     // ── Detalhes: 11 campos reais, ocultando vazios ───────────
 

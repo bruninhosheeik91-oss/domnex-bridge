@@ -6,6 +6,7 @@ import com.domnex.cfi.bridge.BuildConfig
 import com.domnex.cfi.bridge.auth.supabase.HttpUrlConnectionSupabaseClient
 import com.domnex.cfi.bridge.auth.supabase.PrefsSupabaseSessionStore
 import com.domnex.cfi.bridge.auth.supabase.SupabaseAuthConfig
+import com.domnex.cfi.bridge.monitoring.BridgeMonitoringRepository
 
 /**
  * Ponto único de acesso da UI aos gateways de autenticação.
@@ -26,6 +27,14 @@ object AuthProvider {
         private set
 
     lateinit var userDirectory: UserDirectory
+        private set
+
+    /**
+     * Repositório do monitoramento de bridges. Somente disponível quando há
+     * backend Supabase real (precisa do JWT autenticado); null no backend local
+     * DEV. A tela trata null como "não configurado" — nunca como sucesso fake.
+     */
+    var bridgeMonitoringRepository: BridgeMonitoringRepository? = null
         private set
 
     var usingLocalDevBackend: Boolean = true
@@ -49,6 +58,8 @@ object AuthProvider {
                 )
                 authGateway = gateway
                 userDirectory = RemoteUserDirectory(config, httpClient) { gateway.currentAccessToken() }
+                bridgeMonitoringRepository =
+                    BridgeMonitoringRepository(config, httpClient) { gateway.currentAccessToken() }
                 usingLocalDevBackend = false
                 logInit("AuthGateway=SupabaseAuthGateway url=${config.projectUrl}")
             } else {

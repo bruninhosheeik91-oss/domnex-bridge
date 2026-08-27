@@ -65,6 +65,9 @@ class TonAccessibilityService : AccessibilityService() {
         private const val MAX_SEEN_FP = 500
         private const val MAX_KNOWN_TX = 500
 
+        /** Refresh forçado da lista TON — mínimo de 20 minutos (1.200.000 ms). */
+        internal const val FORCED_REFRESH_INTERVAL_MS = 1_200_000L
+
         var instance: TonAccessibilityService? = null
             private set
 
@@ -91,7 +94,10 @@ class TonAccessibilityService : AccessibilityService() {
 
     private val SALE_TIMEOUT_MS = 15000L
     private val REFRESH_AFTER_CYCLES = 4
-    private val REFRESH_MIN_INTERVAL_MS = 20000L
+    // Refresh forçado da lista TON: no MÍNIMO 20 minutos (1.200.000 ms).
+    // Não é o ticker de 2s (BridgeForegroundService) — a detecção de novas
+    // vendas continua imediata via eventos de acessibilidade (onAccessibilityEvent).
+    private val REFRESH_MIN_INTERVAL_MS = FORCED_REFRESH_INTERVAL_MS
     private var pollNoChangeCycles = 0
     private var lastRefreshTime = 0L
     private var refreshLoggedNoAccessible = false
