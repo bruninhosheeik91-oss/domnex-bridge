@@ -317,6 +317,37 @@ class SupabaseAuthGatewayTest {
         assertEquals(0, http.requests.size)
     }
 
+    @Test
+    fun `currentAccessToken renova JWT expirado antes de devolver`() {
+        var refreshedOnce = false
+        val http = FakeHttpClient { request ->
+            when {
+                request.url.endsWith("/token?grant_type=refresh_token") -> {
+                    refreshedOnce = true
+                    HttpResponse.of(
+                        200,
+                        tokenJson(userId = "uid-1", accessToken = "access-2", refreshToken = "refresh-2")
+                    )
+                }
+                "/bridge_profiles?" in request.url -> HttpResponse.of(
+                    200,
+                    profilesJson(profileRow(id = "uid-1", role = "DOMNEX_ADMIN", status = "ACTIVE"))
+                )
+                else -> HttpResponse.of(404, "{}")
+            }
+        }
+        val store = InMemorySessionStore()
+        store.save(storedSession(expiresIn = -60)) // JWT já expirada
+        val (gateway, _) = newGateway(http, store = store)
+
+        val token = gateway.currentAccessToken()
+
+        assertTrue(refreshedOnce)
+        // Nunca devolve o JWT vencido: retorna o token renovado e persistido.
+        assertEquals("access-2", token)
+        assertEquals("access-2", store.stored?.accessToken)
+    }
+
     // ----------------------------------------------------------------- logout
 
     @Test

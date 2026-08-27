@@ -1,8 +1,12 @@
 package com.domnex.cfi.bridge.monitoring
 
+import android.util.Log
+import com.domnex.cfi.bridge.BuildConfig
 import com.domnex.cfi.bridge.auth.supabase.HttpRequest
 import com.domnex.cfi.bridge.auth.supabase.SupabaseAuthConfig
 import com.domnex.cfi.bridge.auth.supabase.SupabaseHttpClient
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
@@ -60,6 +64,15 @@ class BridgeMonitoringRepository(
             return BridgeMonitoringResult.Failed("Falha de rede ao contatar o backend.")
         }
 
+        // Diagnóstico SOMENTE em debug: HTTP status + código de erro sanitizado da
+        // proxy. NUNCA loga JWT, headers nem qualquer segredo.
+        if (BuildConfig.DEBUG) {
+            val code = runCatching {
+                json.decodeFromString(ProxyError.serializer(), response.bodyText()).error
+            }.getOrNull()
+            Log.d(LOG_TAG, "bridge-monitoring-proxy status=${response.statusCode} ${code ?: "(sem corpo de erro)"}")
+        }
+
         return when {
             response.statusCode in 200..299 -> {
                 val parsed = runCatching {
@@ -88,5 +101,12 @@ class BridgeMonitoringRepository(
 
     companion object {
         const val BRIDGE_MONITORING_PROXY_FUNCTION = "bridge-monitoring-proxy"
+        private const val LOG_TAG = "DomnexMonitor"
     }
 }
+
+@Serializable
+private data class ProxyError(
+    val error: String? = null,
+    @SerialName("status") val statusCode: Int? = null
+)

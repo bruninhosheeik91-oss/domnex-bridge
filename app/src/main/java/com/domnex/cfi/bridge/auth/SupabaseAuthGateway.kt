@@ -170,7 +170,18 @@ class SupabaseAuthGateway(
     override fun currentUser(): UserAccount? =
         cachedSession?.user ?: currentSession()?.user
 
-    fun currentAccessToken(): String? = sessionStore.load()?.accessToken
+    /**
+     * Token de acesso vigente para chamadas autenticadas ao backend.
+     *
+     * Garante frescor: antes de devolver, tenta [currentSession], que renova o
+     * JWT expirado (via refresh_token) e persiste o novo token. Se o refresh
+     * falhar/for revogado, [currentSession] zera a sessão e este método
+     * devolve null. Assim nenhuma chamada envia um JWT expirado para a proxy.
+     */
+    fun currentAccessToken(): String? {
+        currentSession()
+        return sessionStore.load()?.accessToken
+    }
 
     private data class Refreshed(val session: AuthSession)
 

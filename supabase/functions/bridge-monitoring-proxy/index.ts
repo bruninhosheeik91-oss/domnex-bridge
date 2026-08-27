@@ -36,8 +36,17 @@
 // Se faltar M2M_MONITORING_SECRET ou CFI_MONITORING_URL, a função responde
 // 503 (fail-closed), sem expor detalhes.
 //
-// Deploy (requer CLI logado):
-//   supabase functions deploy bridge-monitoring-proxy --project-ref bknttvuiqsrkftodcsku
+// verify_jwt = false (config.toml) — INTENCIONAL:
+//   O projeto DOMNEX BRIDGE emite tokens com as NOVAS chaves de assinatura
+//   assimétricas (RS256), que o check legado do gateway (verify_jwt = true)
+//   NÃO reconhece — devolvendo 401 antes do código. Com o check do gateway
+//   desligado, a autenticação é feita 100% AQUI (fail-closed): sem JWT -> 401,
+//   JWT inválido (auth.getUser) -> 401, perfil inexistente -> 403,
+//   role/status != DOMNEX_ADMIN/ACTIVE -> 403. A função NÃO fica pública.
+//
+// Deploy (requer CLI logado) — usar --no-verify-jwt para casar com config.toml:
+//   supabase functions deploy bridge-monitoring-proxy \
+//     --project-ref bknttvuiqsrkftodcsku --no-verify-jwt
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -70,6 +79,51 @@ export function errorJson(error: string, status: number): HandlerResult {
 }
 
 // ---------------------------------------------------------------------------
+// Log sanitizado por etapas. NUNCA imprime valores — apenas presença/ausência
+// e códigos status (sem token, sem header, sem segredo).
+// ---------------------------------------------------------------------------
+
+const PROXY_AUTH_TAG = "[PROXY_AUTH]";
+
+function proxyLog(message: string): void {
+  // eslint-disable-next-line no-console
+  console.log(`${PROXY_AUTH_TAG} ${message}`);
+}
+
+/** Presença/ausência apenas — nunca o valor real. */
+function headerPresence(req: Request, name: string): string {
+  return req.headers.get(name) ? "present" : "missing";
+}
+
+/** Código sanitizado do SDK (status/code) — sem mensagem crua (não loga token). */
+function sanitizeSdkError(err: unknown): string {
+  const e = err as { status?: number; code?: string } | null;
+  const status = e?.status ?? "n/a";
+  const code = e?.code ?? "n/a";
+  return `status=${status} code=${code}`;
+}
+
+const UPSTREAM_TAG = "[PROXY_UPSTREAM]";
+
+/**
+ * Log do resultado da chamada server-to-server ao CFI. Imprime APENAS o status
+ * HTTP e um código de erro curto (campo `error`/`code`) quando o CFI devolver
+ * JSON estruturado. NUNCA imprime o body cru, o secret M2M, headers nem tokens.
+ */
+function logUpstream(status: number, bodyText: string): void {
+  let code = "";
+  try {
+    const parsed = JSON.parse(bodyText);
+    const c = parsed?.error ?? parsed?.code ?? parsed?.status ?? null;
+    if (typeof c === "string" && c.length > 0 && c.length <= 64) code = c;
+    else if (typeof c === "number") code = String(c);
+  } catch (_err) {
+    // corpo não-JSON: só o status é reportado.
+  }
+  console.log(`${UPSTREAM_TAG} response status=${status}${code ? ` error=${code}` : ""}`);
+}
+
+// ---------------------------------------------------------------------------
 // Núcleo da função (exportado para testes unitários)
 // ---------------------------------------------------------------------------
 
@@ -78,10 +132,12 @@ export async function handleRequest(
   deps: Deps = { env: Deno.env.toObject() }
 ): Promise<HandlerResult> {
   const method = req.method;
+  proxyLog(`request_received method=${method}`);
 
   // Somente leitura/monitoramento. GET (query params) e POST (com body) são
   // aceitos e repassados ao CFI conforme recebidos.
   if (method !== "GET" && method !== "POST") {
+    proxyLog("method_not_allowed");
     return { status: 405, body: { error: "METHOD_NOT_ALLOWED" } };
   }
 
@@ -91,13 +147,26 @@ export async function handleRequest(
   const CFI_URL = deps.env["CFI_MONITORING_URL"];
 
   if (!SUPABASE_URL || !ANON_KEY) {
+    proxyLog("server_misconfigured_supabase_url_or_anon_presence=" +
+      `${SUPABASE_URL ? "present" : "missing"},${ANON_KEY ? "present" : "missing"}`);
     return errorJson("SERVER_MISCONFIGURED", 500);
   }
 
   // ------------------------------------------------------------------ caller
+  // Presença/ausência apenas. Nunca imprime o JWT, o header Authorization
+  // nem a chave `apikey`.
+  proxyLog(
+    `authorization_header=${headerPresence(req, "Authorization")} ` +
+    `apikey_header=${headerPresence(req, "apikey")}`
+  );
+
   const authHeader = req.headers.get("Authorization") ?? "";
   const jwt = authHeader.replace(/^Bearer\s+/i, "").trim();
-  if (!jwt) return errorJson("UNAUTHENTICATED", 401);
+  if (!jwt) {
+    proxyLog("authorization_missing");
+    return errorJson("UNAUTHENTICATED", 401);
+  }
+  proxyLog("bearer_present");
 
   const createSupabaseClient: (url: string, key: string, options?: unknown) => any =
     deps.createSupabaseClient ??
@@ -110,7 +179,12 @@ export async function handleRequest(
   });
 
   const { data: userData, error: userError } = await callerClient.auth.getUser(jwt);
-  if (userError || !userData?.user) return errorJson("UNAUTHENTICATED", 401);
+  if (userError || !userData?.user) {
+    // Somente código sanitizado do SDK (status/code). Nunca a mensagem crua.
+    proxyLog(`auth_get_user_failed ${sanitizeSdkError(userError)} user_data=${userData ? "present" : "missing"}`);
+    return errorJson("UNAUTHENTICATED", 401);
+  }
+  proxyLog("auth_get_user_success");
 
   const { data: callerProfile, error: profileError } = await callerClient
     .from("bridge_profiles")
@@ -118,16 +192,25 @@ export async function handleRequest(
     .eq("id", userData.user.id)
     .single();
 
-  if (profileError || !callerProfile) return errorJson("PROFILE_MISSING", 403);
+  if (profileError || !callerProfile) {
+    proxyLog(`profile_missing erro=${profileError ? "sim" : "nao"}`);
+    return errorJson("PROFILE_MISSING", 403);
+  }
+  proxyLog(
+    `profile_found role=${callerProfile.role} status=${callerProfile.status}`
+  );
   if (callerProfile.role !== "DOMNEX_ADMIN" || callerProfile.status !== "ACTIVE") {
+    proxyLog("profile_forbidden");
     return errorJson("FORBIDDEN", 403);
   }
 
   // ------------------------------------------------------- fail-closed secrets
   if (!M2M_SECRET || !CFI_URL) {
     // Sem detalhes: não revela qual env falta nem qualquer segredo.
+    proxyLog("upstream_unconfigured");
     return errorJson("UPSTREAM_UNCONFIGURED", 503);
   }
+  proxyLog("upstream_start");
 
   // ------------------------------------------- chamada server-to-server (CFI)
   // Reenviamos method + query string + body do chamador, além de payload
@@ -163,6 +246,11 @@ export async function handleRequest(
   const upstreamStatus = upstream.status;
   const isJson = isJsonContentType(upstream);
   const upstreamText = await upstream.text();
+
+  // Log sanitizado APÓS o fetch do upstream. Nunca imprime body cru, secret,
+  // token nem header — apenas status e um código de erro curto (error/code),
+  // se o CFI devolver JSON estruturado.
+  logUpstream(upstreamStatus, upstreamText);
 
   if (upstreamStatus >= 500) {
     // Backend CFI indisponível — falha real, não mascaramos como sucesso.

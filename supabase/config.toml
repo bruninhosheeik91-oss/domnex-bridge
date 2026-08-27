@@ -10,7 +10,21 @@ project_id = "bknttvuiqsrkftodcsku"
 # Edge Functions: DOMNEX BRIDGE
 # ---------------------------------------------------------------------------
 
-# bridge-monitoring-proxy: valida JWT do Supabase DOMNEX BRIDGE e faz proxy
-# server-to-server para o monitoramento do CFI. Exige JWT válido (verify_jwt).
+# bridge-monitoring-proxy: proxy server-to-server para o monitoramento do CFI.
+#
+# verify_jwt = false — intencional e seguro:
+#   O projeto DOMNEX BRIDGE emite tokens com as NOVAS chaves de assinatura
+#   assimétricas (RS256), que o check legado do gateway (verify_jwt = true)
+#   NÃO reconhece — causando 401 "Invalid JWT" ANTES do código executar. Por
+#   isso o check embutido do gateway é desligado aqui.
+#
+#   A autenticação passa a ser feita 100% DENTRO da função, fail-closed:
+#     - sem 'Authorization: Bearer'          -> 401 UNAUTHENTICATED
+#     - JWT inválido (auth.getUser falha)    -> 401 UNAUTHENTICATED
+#     - bridge_profiles inexistente          -> 403 PROFILE_MISSING
+#     - role != DOMNEX_ADMIN ou status != ACTIVE -> 403 FORBIDDEN
+#     - somente então chama o CFI via M2M_MONITORING_SECRET
+#   Isso torna a função NÃO pública: só um DOMNEX_ADMIN ACTIVE do projeto
+#   bknttvuiqsrkftodcsku, com JWT válido, obtém resposta.
 [functions.bridge-monitoring-proxy]
-verify_jwt = true
+verify_jwt = false
