@@ -42,6 +42,67 @@ class BridgeMonitoringTest {
     // ------------------------------------------------------------ modelos
 
     @Test
+    fun `resposta com summary aninhado parseia KPIs reais do servidor`() {
+        val body = """
+            {
+              "summary": {
+                "totalBridges": 1,
+                "activeBridges": 1,
+                "suspendedBridges": 0,
+                "revokedBridges": 0,
+                "ingestsToday": 0
+              },
+              "bridges": [
+                {
+                  "bridgeId":"b-1","bridgeName":"Bridge Financeiro Principal",
+                  "organizationId":"o-1","organizationName":"adbras",
+                  "status":"ACTIVE","sistemaDestino":"CFI",
+                  "lastActivityAt":"2026-08-26T10:30:00Z",
+                  "lastSerialNumber":"SN8821","lastTransactionCode":"20260826001234",
+                  "totalIngests":40,"ingestsToday":0,"successfulIngests":40,
+                  "pendingMappingCount":0,"failedIngests":0,"activityStatus":"RECENT"
+                }
+              ]
+            }
+        """.trimIndent()
+        val http = FakeHttpClient { _ -> HttpResponse.of(200, body) }
+        val repo = BridgeMonitoringRepository(config, http) { "tok-admin" }
+
+        val result = repo.load()
+        assertTrue(result is BridgeMonitoringResult.Success)
+        val model = BridgeMonitoringUiModel.from((result as BridgeMonitoringResult.Success).data)
+
+        assertEquals(1, model.total)
+        assertEquals(1, model.active)
+        assertEquals(0, model.attention)
+        assertEquals(0, model.ingestsToday)
+        assertEquals(1, model.bridges.size)
+        assertEquals(BridgeCredentialStatus.ACTIVE, model.bridges[0].credentialStatus())
+        assertFalse(model.empty)
+    }
+
+    @Test
+    fun `resposta sem summary cai no fallback dos contadores da raiz`() {
+        val body = """
+            {
+              "totalBridges":1,"activeBridges":1,"suspendedBridges":0,"revokedBridges":0,
+              "ingestsToday":0,
+              "bridges":[{"bridgeId":"b-1","bridgeName":"B","status":"ACTIVE"}]
+            }
+        """.trimIndent()
+        val http = FakeHttpClient { _ -> HttpResponse.of(200, body) }
+        val repo = BridgeMonitoringRepository(config, http) { "tok-admin" }
+
+        val model = BridgeMonitoringUiModel.from(
+            (repo.load() as BridgeMonitoringResult.Success).data
+        )
+        assertEquals(1, model.total)
+        assertEquals(1, model.active)
+        assertEquals(0, model.attention)
+        assertEquals(0, model.ingestsToday)
+    }
+
+    @Test
     fun `resposta vazia parseia e vira estado vazio`() {
         val http = FakeHttpClient { _ ->
             HttpResponse.of(200, """{"totalBridges":0,"bridges":[]}""")

@@ -23,16 +23,35 @@ import java.time.format.DateTimeParseException
 
 @Serializable
 data class BridgeMonitoringResponse(
-    val totalBridges: Int = 0,
-    val activeBridges: Int = 0,
-    val suspendedBridges: Int = 0,
-    val revokedBridges: Int = 0,
-    val recentActivityBridges: Int = 0,
-    val noRecentActivityBridges: Int = 0,
-    val neverUsedBridges: Int = 0,
-    val pendingMappingTotal: Int = 0,
-    val ingestsToday: Int = 0,
-    val bridges: List<BridgeMonitoringRow> = emptyList()
+    @SerialName("totalBridges") val totalBridges: Int = 0,
+    @SerialName("activeBridges") val activeBridges: Int = 0,
+    @SerialName("suspendedBridges") val suspendedBridges: Int = 0,
+    @SerialName("revokedBridges") val revokedBridges: Int = 0,
+    @SerialName("recentActivityBridges") val recentActivityBridges: Int = 0,
+    @SerialName("noRecentActivityBridges") val noRecentActivityBridges: Int = 0,
+    @SerialName("neverUsedBridges") val neverUsedBridges: Int = 0,
+    @SerialName("pendingMappingTotal") val pendingMappingTotal: Int = 0,
+    @SerialName("ingestsToday") val ingestsToday: Int = 0,
+    /**
+     * O backend CFI entrega o resumo de KPIs aninhado aqui. Quando presente,
+     * [summary] é a fonte dos KPIs; os contadores achatados acima atuam apenas
+     * como fallback para respostas que os tragam na raiz.
+     */
+    @SerialName("summary") val summary: BridgeMonitoringSummary? = null,
+    @SerialName("bridges") val bridges: List<BridgeMonitoringRow> = emptyList()
+)
+
+/**
+ * Resumo (KPIs) do monitoramento repassado pelo backend CFI, aninhado no campo
+ * `summary`. Valores reais do servidor — nunca calculados nem inventados aqui.
+ */
+@Serializable
+data class BridgeMonitoringSummary(
+    @SerialName("totalBridges") val totalBridges: Int = 0,
+    @SerialName("activeBridges") val activeBridges: Int = 0,
+    @SerialName("suspendedBridges") val suspendedBridges: Int = 0,
+    @SerialName("revokedBridges") val revokedBridges: Int = 0,
+    @SerialName("ingestsToday") val ingestsToday: Int = 0
 )
 
 @Serializable
@@ -111,10 +130,11 @@ data class BridgeMonitoringUiModel(
     companion object {
         fun from(response: BridgeMonitoringResponse): BridgeMonitoringUiModel =
             BridgeMonitoringUiModel(
-                total = response.totalBridges,
-                active = response.activeBridges,
-                attention = response.suspendedBridges + response.revokedBridges,
-                ingestsToday = response.ingestsToday,
+                total = response.summary?.totalBridges ?: response.totalBridges,
+                active = response.summary?.activeBridges ?: response.activeBridges,
+                attention = (response.summary?.suspendedBridges ?: response.suspendedBridges) +
+                    (response.summary?.revokedBridges ?: response.revokedBridges),
+                ingestsToday = response.summary?.ingestsToday ?: response.ingestsToday,
                 bridges = response.bridges
             )
     }
