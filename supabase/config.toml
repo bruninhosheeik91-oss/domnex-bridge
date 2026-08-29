@@ -10,6 +10,24 @@ project_id = "bknttvuiqsrkftodcsku"
 # Edge Functions: DOMNEX BRIDGE
 # ---------------------------------------------------------------------------
 
+# bridge-provisioning: reprovisionamento automático do Bridge após
+# reinstalação. Mesmo motivo do bridge-monitoring-proxy:
+# verify_jwt = false — intencional e seguro.
+#
+#   O projeto DOMNEX BRIDGE emite tokens com as NOVAS chaves de assinatura
+#   assimétricas (RS256), que o check legado do gateway (verify_jwt = true)
+#   NÃO reconhece — causando 401 "Invalid JWT" ANTES do código executar.
+#   A autenticação é feita 100% DENTRO da função, fail-closed:
+#     - sem 'Authorization: Bearer'          -> 401 UNAUTHENTICATED
+#     - JWT inválido (auth.getUser falha)    -> 401 UNAUTHENTICATED
+#     - bridge_profiles inexistente          -> 403 PROFILE_MISSING
+#     - status != ACTIVE (PENDING/SUSPENDED) -> 403 FORBIDDEN
+#     - somente então devolve a config do cliente (via service_role no backend)
+#   Isso torna a função NÃO pública: só um usuário real ACTIVE do projeto
+#   bknttvuiqsrkftodcsku, com JWT válido, obtém a própria configuração.
+[functions.bridge-provisioning]
+verify_jwt = false
+
 # bridge-monitoring-proxy: proxy server-to-server para o monitoramento do CFI.
 #
 # verify_jwt = false — intencional e seguro:

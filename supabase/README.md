@@ -10,10 +10,12 @@ Autenticação real do app via **Supabase Auth**. Projeto vinculado:
 | `migrations/20260823000000_fase6a_bridge_auth.sql` | Tabelas `bridge_clients` e `bridge_profiles`, enums, RLS, trigger de provisionamento, RPC `bridge_admin_set_user_status` |
 | `migrations/20260823120000_fix_bridge_profiles_client_constraint.sql` | Corretiva da constraint de vínculo (ADMIN sem cliente; CLIENT PENDING pode ficar sem; ACTIVE/SUSPENDED exige) |
 | `migrations/20260824000000_fase6b_bridge_admin_update_access.sql` | RPC segura `bridge_admin_update_access`: edição administrativa de nome/perfil/status/cliente com validação no servidor |
+| `migrations/20260829000000_domnex_bridge_provisioning_config.sql` | Tabela `bridge_configs` (configuração operacional **por cliente**, 1:1 com `bridge_clients`): endpoint + token de ingestão. RLS FORCE **sem nenhuma policy** — só a Edge Function `bridge-provisioning` lê, via `service_role` no backend |
 | `functions/admin-create-access/index.ts` | Edge Function segura para criar acessos (valida role no servidor; usa service_role só no backend). Suporta **senha inicial** opcional: cria o usuário já com login utilizável (e-mail + senha, sem depender de convite/SMTP) e depois apenas ATUALIZA o perfil criado pelo trigger — nunca insere um segundo perfil nem ecoa a senha |
 | `functions/admin-update-email/index.ts` | Edge Function segura para alterar e-mail de um acesso via `auth.admin` (e-mail pertence ao Supabase Auth, não a `bridge_profiles`) |
 | `functions/admin-delete-client/index.ts` | Edge Function segura para a **exclusão definitiva** de um cliente ("Zona de risco"): remove os usuários Auth vinculados (login cessa imediatamente; perfis caem por FK ON DELETE CASCADE) e só então a linha em `bridge_clients`. Guardas: auto-exclusão e perfis DOMNEX_ADMIN bloqueados; falha parcial NÃO exclui o cliente |
 | `functions/bridge-monitoring-proxy/index.ts` | Proxy seguro (`verify_jwt = false` em `config.toml`; a auth embutida da função é fail-closed) do **monitoramento de bridges** do CFI. Exige chamador `bridge_profiles` `DOMNEX_ADMIN` + `ACTIVE` (validado dentro da função via `auth.getUser`) e faz a chamada server-to-server ao CFI usando `M2M_MONITORING_SECRET` — nunca exposto ao Android. Necessita as envs `M2M_MONITORING_SECRET` e `CFI_MONITORING_URL`; sem elas responde 503 (fail-closed) |
+| `functions/bridge-provisioning/index.ts` | Edge Function de **reprovisionamento automático pós-reinstalação** (`verify_jwt = false`; auth validada dentro da função, fail-closed). Valida JWT → `auth.getUser` → `bridge_profiles` **ACTIVE** → devolve a configuração operacional do cliente (endpoint + token de ingestão) lida de `bridge_configs` com `service_role` no backend. NUNCA retorna `service_role`/`M2M_MONITORING_SECRET`/senha; NUNCA loga o `bridgeToken` (tags `PROVISIONING_AUTH`/`_SUCCESS`/`_NOT_CONFIGURED`/`_ERROR`) |
 | `docs/ADMIN_BOOTSTRAP.md` | Como transformar um usuário real do Supabase Auth em `DOMNEX_ADMIN` (sem hardcode no APK) |
 
 ## Segurança (regras fixas)
@@ -51,6 +53,7 @@ supabase functions deploy admin-create-access --project-ref bknttvuiqsrkftodcsku
 supabase functions deploy admin-update-email  --project-ref bknttvuiqsrkftodcsku
 supabase functions deploy admin-delete-client --project-ref bknttvuiqsrkftodcsku
 supabase functions deploy bridge-monitoring-proxy --project-ref bknttvuiqsrkftodcsku --no-verify-jwt
+supabase functions deploy bridge-provisioning --project-ref bknttvuiqsrkftodcsku --no-verify-jwt
 ```
 
 No projeto hospedado, `SUPABASE_URL`, `SUPABASE_ANON_KEY` e

@@ -23,3 +23,12 @@ supabase/functions/.env
 # Keystores e assinatura (nunca versionar)
 *.jks
 *.keystore
+
+# JVM crash/replay dumps
+hs_err_pid*.log
+replay_pid*.log
+app/hs_err_pid*.log
+app/replay_pid*.log
+
+# APKs soltos de teste/build manual na raiz (a release final é gerada pelo Gradle)
+/*.apk

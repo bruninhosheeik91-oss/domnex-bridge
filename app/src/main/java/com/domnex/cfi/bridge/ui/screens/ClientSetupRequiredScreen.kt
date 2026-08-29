@@ -13,15 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.domnex.cfi.bridge.provisioning.ProvisioningState
 import com.domnex.cfi.bridge.ui.components.BridgeCard
 import com.domnex.cfi.bridge.ui.components.GoldPrimaryButton
 import com.domnex.cfi.bridge.ui.theme.FailureRose
@@ -33,15 +28,20 @@ import com.domnex.cfi.bridge.ui.theme.TextSecondary
 /**
  * Tela bloqueante para CLIENT quando o Bridge ainda não foi provisionado.
  * Não expõe endpoint/token nem qualquer campo técnico.
+ *
+ * A mensagem vem do orquestrador (MainScreen):
+ *  - configured=false  -> "Este acesso ainda não possui um DOMNEX BRIDGE configurado."
+ *  - falha de backend  -> erro amigável + "Tente novamente." (botão re-tenta o
+ *                         reprovisionamento remoto; a configuração local, se
+ *                         existir, nunca é apagada).
  */
 @Composable
 fun ClientSetupRequiredScreen(
-    onRetry: () -> Boolean,
+    message: String?,
+    onRetry: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var retryFailed by remember { mutableStateOf(false) }
-
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -64,22 +64,15 @@ fun ClientSetupRequiredScreen(
                     )
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        text = "Este Domnex Bridge ainda precisa ser configurado pela Domnex Tech.",
+                        text = message
+                            ?: "Este acesso ainda não possui um DOMNEX BRIDGE configurado.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary
                     )
-                    if (retryFailed) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "Ainda não há configuração disponível. Tente novamente mais tarde.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = FailureRose
-                        )
-                    }
                     Spacer(Modifier.height(20.dp))
                     GoldPrimaryButton(
                         text = "TENTAR NOVAMENTE",
-                        onClick = { retryFailed = !onRetry() },
+                        onClick = onRetry,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(6.dp))

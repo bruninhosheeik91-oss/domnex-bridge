@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Necessária no Android 8+ (API 26) para que canRequestPackageInstalls()
+         funcione e o app possa pedir instalação de APK externo (atualização),
+         sempre abrindo o instalador oficial para confirmação do usuário. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -47,6 +52,18 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Continuous monitoring of TON sales list via accessibility service" />
         </service>
+
+        <!-- Compartilha o APK de atualização baixado com o instalador oficial do
+             Android via content URI segura (nunca file:// inseguro). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.domnex.cfi.bridge.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

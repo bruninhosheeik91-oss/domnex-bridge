@@ -7,6 +7,8 @@ import com.domnex.cfi.bridge.auth.supabase.HttpUrlConnectionSupabaseClient
 import com.domnex.cfi.bridge.auth.supabase.PrefsSupabaseSessionStore
 import com.domnex.cfi.bridge.auth.supabase.SupabaseAuthConfig
 import com.domnex.cfi.bridge.monitoring.BridgeMonitoringRepository
+import com.domnex.cfi.bridge.provisioning.BridgeProvisioning
+import com.domnex.cfi.bridge.provisioning.RemoteBridgeProvisioningRepository
 
 /**
  * Ponto único de acesso da UI aos gateways de autenticação.
@@ -37,6 +39,14 @@ object AuthProvider {
     var bridgeMonitoringRepository: BridgeMonitoringRepository? = null
         private set
 
+    /**
+     * Repositório do reprovisionamento automático pós-login. Disponível somente
+     * com backend Supabase real (precisa do JWT da sessão); null no backend
+     * local DEV (onde não há bridge-config ao qual reprovisionar).
+     */
+    var remoteBridgeProvisioningRepository: RemoteBridgeProvisioningRepository? = null
+        private set
+
     var usingLocalDevBackend: Boolean = true
         private set
 
@@ -60,6 +70,12 @@ object AuthProvider {
                 userDirectory = RemoteUserDirectory(config, httpClient) { gateway.currentAccessToken() }
                 bridgeMonitoringRepository =
                     BridgeMonitoringRepository(config, httpClient) { gateway.currentAccessToken() }
+                remoteBridgeProvisioningRepository = RemoteBridgeProvisioningRepository(
+                    config = config,
+                    httpClient = httpClient,
+                    accessTokenProvider = { gateway.currentAccessToken() },
+                    storage = BridgeProvisioning.get(appContext)
+                )
                 usingLocalDevBackend = false
                 logInit("AuthGateway=SupabaseAuthGateway url=${config.projectUrl}")
             } else {

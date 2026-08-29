@@ -16,9 +16,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,12 +28,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.domnex.cfi.bridge.BuildConfig
 import com.domnex.cfi.bridge.auth.AccountPresentation
 import com.domnex.cfi.bridge.auth.AuthProvider
 import com.domnex.cfi.bridge.auth.UserStatus
 import com.domnex.cfi.bridge.data.SaleHistory
 import com.domnex.cfi.bridge.provisioning.BridgeProvisioning
+import com.domnex.cfi.bridge.update.UpdateAvailableDialog
+import com.domnex.cfi.bridge.update.UpdateCheckUiState
+import com.domnex.cfi.bridge.update.InstalledVersion
+import com.domnex.cfi.bridge.update.UpdateManager
+import com.domnex.cfi.bridge.update.UpdateProvider
+import com.domnex.cfi.bridge.update.UpdateStatusMessage
 import com.domnex.cfi.bridge.ui.components.BridgeCard
 import com.domnex.cfi.bridge.ui.components.BridgeStatusDot
 import com.domnex.cfi.bridge.ui.components.IntegrationStatusCard
@@ -42,6 +49,10 @@ import com.domnex.cfi.bridge.ui.theme.SuccessGreen
 import com.domnex.cfi.bridge.ui.theme.TextMuted
 import com.domnex.cfi.bridge.ui.theme.TextSecondary
 import com.domnex.cfi.bridge.ui.theme.WarningAmber
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Conta: dados reais da sessão (Supabase) e status da integração.
@@ -59,6 +70,33 @@ fun AccountScreen(
     val systemName = remember { repository.load().displayNameOrDefault() }
     val account = AuthProvider.authGateway.currentUser()
     var showClearHistoryDialog by remember { mutableStateOf(false) }
+    var updateState by remember { mutableStateOf<UpdateCheckUiState>(UpdateCheckUiState.Idle) }
+    var checkInProgress by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun runUpdateCheck() {
+        val repo = UpdateProvider.repository
+        if (repo == null) {
+            updateState = UpdateCheckUiState.NotConfigured
+            return
+        }
+        checkInProgress = true
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { repo.check() }.getOrNull() }
+            checkInProgress = false
+            updateState = when (result) {
+                is com.domnex.cfi.bridge.update.UpdateCheckResult.NoUpdate ->
+                    UpdateCheckUiState.UpToDate(InstalledVersion.versionName(context))
+                is com.domnex.cfi.bridge.update.UpdateCheckResult.Available ->
+                    UpdateCheckUiState.Available(result.info, required = result.required)
+                is com.domnex.cfi.bridge.update.UpdateCheckResult.NotConfigured ->
+                    UpdateCheckUiState.NotConfigured
+                is com.domnex.cfi.bridge.update.UpdateCheckResult.CheckError ->
+                    UpdateCheckUiState.Error(result.message)
+                null -> UpdateCheckUiState.Error("Não foi possível verificar atualizações.")
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -190,7 +228,12 @@ fun AccountScreen(
         }
 
         Spacer(Modifier.height(18.dp))
-        AboutCard()
+        AboutCard(
+            checkInProgress = checkInProgress,
+            onCheck = { if (!checkInProgress) runUpdateCheck() },
+            updateState = updateState,
+            onDismissUpdate = { updateState = UpdateCheckUiState.Idle }
+        )
         Spacer(Modifier.height(30.dp))
     }
 
@@ -250,9 +293,24 @@ private fun StatusLine(label: String, status: UserStatus?) {
 
 /**
  * Sobre o Domnex Bridge — dados reais do BuildConfig (sem hardcode duplicado).
+ * Inclui verificação manual de atualizações de forma discreta.
  */
 @Composable
-private fun AboutCard() {
+private fun AboutCard(
+    checkInProgress: Boolean,
+    onCheck: () -> Unit,
+    updateState: UpdateCheckUiState,
+    onDismissUpdate: () -> Unit
+) {
+    val context = LocalContext.current
+    val updateManager = remember { UpdateManager(context) }
+    var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
+
+    val availableState = updateState as? UpdateCheckUiState.Available
+    val buttonEnabled = !checkInProgress &&
+        downloadState !is DownloadState.Downloading &&
+        downloadState !is DownloadState.ReadyToInstall
+
     BridgeCard(modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(16.dp)) {
         Text(
             text = "SOBRE O DOMNEX BRIDGE",
@@ -261,30 +319,80 @@ private fun AboutCard() {
             fontWeight = FontWeight.Bold
         )
         Spacer(Modifier.height(8.dp))
-        AboutRow("Versão", BuildConfig.VERSION_NAME)
-        AboutRow("Build", BuildConfig.VERSION_CODE.toString())
-        AboutRow("Desenvolvido por", "Domnex Tech")
+        Text(
+            text = "DOMNEX BRIDGE",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "Versão instalada: ${InstalledVersion.versionName(context)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary
+        )
+        TextButton(
+            onClick = onCheck,
+            enabled = buttonEnabled,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        ) {
+            Text(
+                text = when {
+                    checkInProgress -> "VERIFICANDO..."
+                    downloadState is DownloadState.Downloading -> "BAIXANDO..."
+                    downloadState is DownloadState.ReadyToInstall -> "Aguarde a instalação..."
+                    else -> "VERIFICAR ATUALIZAÇÕES"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (buttonEnabled) Gold else TextMuted,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+        UpdateStatusMessage(updateState)
+
+        // Download concluído -> orienta e abre o instalador oficial.
+        if (downloadState is DownloadState.Downloading) {
+            val id = (downloadState as DownloadState.Downloading).downloadId
+            LaunchedEffect(id) {
+                delay(1500)
+                if (id >= 0 && updateManager.isDownloadComplete(id)) {
+                    val installed = updateManager.installApk()
+                    downloadState = DownloadState.ReadyToInstall(installed)
+                }
+            }
+        }
+
+        if (downloadState is DownloadState.ReadyToInstall) {
+            val ready = downloadState as DownloadState.ReadyToInstall
+            Text(
+                text = if (ready.installerOpened) {
+                    "A instalação foi iniciada. Siga as instruções do Android."
+                } else {
+                    "O download foi concluído, mas a instalação não pôde ser aberta."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+
+        if (availableState != null) {
+            UpdateAvailableDialog(
+                info = availableState.info,
+                required = availableState.required,
+                onDismiss = onDismissUpdate,
+                onUpdate = {
+                    val id = updateManager.downloadApk(availableState.info)
+                    downloadState = DownloadState.Downloading(id)
+                    onDismissUpdate()
+                },
+                installing = false
+            )
+        }
     }
 }
 
-@Composable
-private fun AboutRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = TextSecondary,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            color = TextSecondary,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
+private sealed interface DownloadState {
+    object Idle : DownloadState
+    data class Downloading(val downloadId: Long) : DownloadState
+    data class ReadyToInstall(val installerOpened: Boolean) : DownloadState
 }
